@@ -68,6 +68,14 @@ jobs:
             --set-secrets="JWT_SECRET=naqla-jwt-secret-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest" \
             --project=${{ vars.GCP_PROJECT_ID }}
 
+      - name: allow unauthenticated access to api
+        run: |
+          gcloud run services add-iam-policy-binding naqla-api-dev \
+            --region=${{ vars.GCP_REGION }} \
+            --member=allUsers \
+            --role=roles/run.invoker \
+            --project=${{ vars.GCP_PROJECT_ID }}
+
       - name: deploy worker to cloud run dev
         run: |
           gcloud run deploy naqla-worker-dev \
