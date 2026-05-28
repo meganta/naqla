@@ -30,7 +30,13 @@ def create_access_token(user_id: str, tenant_id: str, role: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-async def register_user(db: AsyncSession, email: str, password: str, full_name: str, tenant_name: str) -> User:
+async def register_user(
+    db: AsyncSession,
+    email: str,
+    password: str,
+    full_name: str,
+    tenant_name: str,
+) -> User:
     slug = tenant_name.lower().strip().replace(" ", "-")
     tenant = Tenant(name=tenant_name, slug=slug)
     db.add(tenant)
@@ -49,7 +55,9 @@ async def register_user(db: AsyncSession, email: str, password: str, full_name: 
 
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
-    result = await db.execute(select(User).where(User.email == email, User.is_active.is_(True)))
+    result = await db.execute(
+        select(User).where(User.email == email, User.is_active.is_(True))
+    )
     user = result.scalar_one_or_none()
     if not user or not verify_password(password, user.hashed_password):
         return None
