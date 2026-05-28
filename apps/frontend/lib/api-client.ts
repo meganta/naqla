@@ -120,3 +120,12 @@ export const api = {
       }>("/copilot/chat", { method: "POST", body: JSON.stringify(data) }, token),
   },
 };
+
+
+// Individual exports for direct import
+export const createSource = api.ingestion.createSource;
+export const confirmUpload = api.ingestion.confirmUpload;
+export const processSource = api.ingestion.processSource;
+export const listSources = api.ingestion.listSources;
+export const getLatestJob = api.ingestion.getLatestJob;
+export const getJob = api.ingestion.getJob;
