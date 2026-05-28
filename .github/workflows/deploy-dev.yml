@@ -59,28 +59,17 @@ jobs:
 
       - name: run database migrations
         run: |
-          gcloud run jobs create naqla-migrate-dev \
-            --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-migrate:dev-${{ github.sha }} \
-            --region=${{ vars.GCP_REGION }} \
-            --service-account=${{ vars.GCP_API_SA }} \
-            --set-secrets="DATABASE_URL=naqla-db-password-dev:latest" \
-            --set-env-vars="ENVIRONMENT=dev" \
-            --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
-            --max-retries=1 \
-            --project=${{ vars.GCP_PROJECT_ID }} 2>/dev/null || \
-          gcloud run jobs update naqla-migrate-dev \
-            --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-migrate:dev-${{ github.sha }} \
-            --region=${{ vars.GCP_REGION }} \
-            --service-account=${{ vars.GCP_API_SA }} \
-            --set-secrets="DATABASE_URL=naqla-db-password-dev:latest" \
-            --set-env-vars="ENVIRONMENT=dev" \
-            --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
-            --max-retries=1 \
-            --project=${{ vars.GCP_PROJECT_ID }}
-          gcloud run jobs execute naqla-migrate-dev \
-            --region=${{ vars.GCP_REGION }} \
-            --project=${{ vars.GCP_PROJECT_ID }} \
-            --wait
+          IMAGE=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-migrate:dev-${{ github.sha }}
+          REGION=${{ vars.GCP_REGION }}
+          PROJECT=${{ vars.GCP_PROJECT_ID }}
+          JOB=naqla-migrate-dev
+          ARGS="--image=$IMAGE --region=$REGION --service-account=${{ vars.GCP_API_SA }} --set-secrets=DATABASE_URL=naqla-db-password-dev:latest --set-env-vars=ENVIRONMENT=dev --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev --max-retries=1 --project=$PROJECT"
+          if gcloud run jobs describe $JOB --region=$REGION --project=$PROJECT &>/dev/null; then
+            gcloud run jobs update $JOB $ARGS
+          else
+            gcloud run jobs create $JOB $ARGS
+          fi
+          gcloud run jobs execute $JOB --region=$REGION --project=$PROJECT --wait
 
       - name: deploy api
         run: |
