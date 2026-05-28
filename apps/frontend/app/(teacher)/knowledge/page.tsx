@@ -42,7 +42,7 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 };
 
 export default function KnowledgePage() {
-  const [sources, setSources] = useState<<SourceRecord[]>([]);
+  const [sources, setSources] = useState<SourceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
@@ -52,7 +52,7 @@ export default function KnowledgePage() {
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<string>("");
-  const [pollingJobs, setPollingJobs] = useState<<Set<string>>(new Set());
+  const [pollingJobs, setPollingJobs] = useState<Set<string>>(new Set());
 
   const fetchSources = useCallback(async () => {
     try {
