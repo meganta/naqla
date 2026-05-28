@@ -160,6 +160,54 @@ async def get_latest_job(
     return result.scalar_one_or_none()
 
 
+
+
+async def delete_source(
+    db: AsyncSession, source_id: str, tenant_id: str
+) -> bool:
+    """Hard delete a source and its knowledge chunks. Returns True if deleted."""
+    from sqlalchemy import delete
+    
+    # Delete knowledge chunks first (cascade)
+    await db.execute(
+        delete(KnowledgeChunk).where(
+            KnowledgeChunk.source_id == source_id,
+            KnowledgeChunk.tenant_id == tenant_id,
+        )
+    )
+    
+    # Delete source
+    result = await db.execute(
+        delete(KnowledgeSource).where(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.tenant_id == tenant_id,
+        )
+    )
+    
+    await db.flush()
+    return result.rowcount > 0
+
+
+async def update_source_title(
+    db: AsyncSession, source_id: str, tenant_id: str, new_title: str
+) -> KnowledgeSource | None:
+    """Update source title. Returns updated source or None if not found."""
+    result = await db.execute(
+        select(KnowledgeSource).where(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.tenant_id == tenant_id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        return None
+    
+    source.title = new_title
+    source.updated_at = datetime.utcnow()
+    await db.flush()
+    return source
+
+
 async def enqueue_ingestion_job(
     db: AsyncSession, source_id: str, tenant_id: str
 ) -> IngestionJob:

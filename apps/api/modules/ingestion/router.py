@@ -16,6 +16,8 @@ from modules.ingestion.schemas import (
     UploadURLResponse,
 )
 from modules.ingestion.service import (
+    delete_source,
+    update_source_title,
     confirm_upload,
     create_source,
     enqueue_ingestion_job,
@@ -130,6 +132,37 @@ async def get_source_latest_job(
             status_code=status.HTTP_404_NOT_FOUND, detail="No job found for this source"
         )
     return job
+
+
+
+
+@router.delete("/sources/{source_id}")
+async def remove_source(
+    source_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await delete_source(db, source_id, current_user.tenant_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+    return {"message": "Source deleted successfully"}
+
+
+@router.patch("/sources/{source_id}", response_model=SourceResponse)
+async def edit_source_title(
+    source_id: str,
+    title: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    source = await update_source_title(db, source_id, current_user.tenant_id, title)
+    if not source:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+    return source
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)

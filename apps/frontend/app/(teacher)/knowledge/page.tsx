@@ -8,6 +8,8 @@ import {
   processSource,
   listSources,
   getLatestJob,
+  deleteSource,
+  updateSource,
   SourceRecord,
 } from "@/lib/api-client";
 
@@ -55,6 +57,38 @@ export default function KnowledgePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [pollingJobs, setPollingJobs] = useState<Set<string>>(new Set());
+  const [editingSource, setEditingSource] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+
+  const handleDelete = async (sourceId: string) => {
+    if (!window.confirm("Delete this source? This cannot be undone.")) {
+      return;
+    }
+    if (!token) return;
+    try {
+      await deleteSource(sourceId, token);
+      await fetchSources();
+    } catch (e: any) {
+      alert("Delete failed: " + (e.message || "Unknown error"));
+    }
+  };
+
+  const handleEdit = (sourceId: string, currentTitle: string) => {
+    setEditingSource(sourceId);
+    setEditTitle(currentTitle);
+  };
+
+  const handleSaveEdit = async (sourceId: string) => {
+    if (!token) return;
+    try {
+      await updateSource(sourceId, editTitle, token);
+      setEditingSource(null);
+      setEditTitle("");
+      await fetchSources();
+    } catch (e: any) {
+      alert("Update failed: " + (e.message || "Unknown error"));
+    }
+  };
 
   const fetchSources = useCallback(async () => {
     if (!token) return;
@@ -350,6 +384,45 @@ export default function KnowledgePage() {
                       <p className="text-xs text-gray-400">
                         {new Date(source.created_at).toLocaleDateString("ar-SA")}
                       </p>
+                      <div className="mt-2 flex gap-2">
+                        {editingSource === source.id ? (
+                          <>
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              className="px-2 py-1 text-sm border border-gray-300 rounded"
+                            />
+                            <button
+                              onClick={() => handleSaveEdit(source.id)}
+                              className="px-2 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                            >
+                              حفظ
+                            </button>
+                            <button
+                              onClick={() => { setEditingSource(null); setEditTitle(""); }}
+                              className="px-2 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
+                            >
+                              إلغاء
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleEdit(source.id, source.title)}
+                              className="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                              تعديل
+                            </button>
+                            <button
+                              onClick={() => handleDelete(source.id)}
+                              className="px-2 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                            >
+                              حذف
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

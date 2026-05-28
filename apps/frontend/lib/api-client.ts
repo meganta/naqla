@@ -101,6 +101,10 @@ export const api = {
       request<JobRecord>(`/ingestion/sources/${sourceId}/job`, {}, token),
     getJob: (jobId: string, token: string) =>
       request<JobRecord>(`/ingestion/jobs/${jobId}`, {}, token),
+    deleteSource: (sourceId: string, token: string) =>
+      request<{ message: string }>(`/ingestion/sources/${sourceId}`, { method: "DELETE" }, token),
+    updateSource: (sourceId: string, title: string, token: string) =>
+      request<SourceRecord>(`/ingestion/sources/${sourceId}?title=${encodeURIComponent(title)}`, { method: "PATCH" }, token),
   },
   copilot: {
     chat: (
@@ -129,3 +133,5 @@ export const processSource = api.ingestion.processSource;
 export const listSources = api.ingestion.listSources;
 export const getLatestJob = api.ingestion.getLatestJob;
 export const getJob = api.ingestion.getJob;
+export const deleteSource = api.ingestion.deleteSource;
+export const updateSource = api.ingestion.updateSource;
