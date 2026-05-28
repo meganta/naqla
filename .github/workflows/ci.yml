@@ -59,6 +59,7 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://naqla:naqla@localhost:5432/naqla_test
           JWT_SECRET: ci-test-secret
           ENVIRONMENT: dev
+          CI: true
         run: uv run pytest tests/ -v
 
       - name: test worker

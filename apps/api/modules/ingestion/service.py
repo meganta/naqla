@@ -9,28 +9,25 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from modules.ingestion.models import IngestionJob, KnowledgeSource
-
-ALLOWED_SOURCE_TYPES = {
-    "pdf", "docx", "pptx", "text", "audio", "video", "youtube", "manual"
-}
+from modules.ingestion.models import (
+    FILE_SOURCE_TYPES,
+    UNSUPPORTED_SOURCE_TYPES,
+    IngestionJob,
+    KnowledgeSource,
+)
 
 
 def generate_signed_upload_url(
     source_id: str, source_type: str, tenant_id: str
 ) -> tuple[str, str]:
     extension_map = {
-        "pdf": "pdf",
-        "docx": "docx",
-        "pptx": "pptx",
-        "audio": "mp3",
-        "video": "mp4",
-        "text": "txt",
+        "pdf": "pdf", "docx": "docx", "pptx": "pptx",
+        "audio": "mp3", "video": "mp4",
     }
     ext = extension_map.get(source_type, "bin")
     file_path = f"uploads/{tenant_id}/{source_id}.{ext}"
 
-    credentials, project = google.auth.default()
+    credentials, _project = google.auth.default()
     auth_request = google.auth.transport.requests.Request()
     credentials.refresh(auth_request)
 
@@ -64,18 +61,53 @@ async def create_source(
     title: str,
     source_type: str,
     original_url: str | None = None,
+    raw_text: str | None = None,
 ) -> KnowledgeSource:
+    from modules.ingestion.models import ALL_SOURCE_TYPES
+
+    if source_type not in ALL_SOURCE_TYPES:
+        raise ValueError(
+            f"Unknown source type: {source_type}. "
+            f"Allowed: {sorted(ALL_SOURCE_TYPES)}"
+        )
+
+    if source_type in UNSUPPORTED_SOURCE_TYPES:
+        initial_status = "unsupported"
+    elif source_type in FILE_SOURCE_TYPES:
+        initial_status = "upload_pending"
+    else:
+        initial_status = "draft"
+
     source = KnowledgeSource(
         tenant_id=tenant_id,
         teacher_id=teacher_id,
         title=title,
         source_type=source_type,
         original_url=original_url,
-        status="pending",
+        raw_text=raw_text,
+        status=initial_status,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
     db.add(source)
+    await db.flush()
+    return source
+
+
+async def confirm_upload(
+    db: AsyncSession, source_id: str, tenant_id: str
+) -> KnowledgeSource:
+    result = await db.execute(
+        select(KnowledgeSource).where(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.tenant_id == tenant_id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise ValueError("Source not found")
+    source.status = "uploaded"
+    source.updated_at = datetime.utcnow()
     await db.flush()
     return source
 
@@ -89,12 +121,41 @@ async def list_sources(db: AsyncSession, tenant_id: str) -> list[KnowledgeSource
     return list(result.scalars().all())
 
 
-async def get_job(db: AsyncSession, job_id: str, tenant_id: str) -> IngestionJob | None:
+async def get_source(
+    db: AsyncSession, source_id: str, tenant_id: str
+) -> KnowledgeSource | None:
+    result = await db.execute(
+        select(KnowledgeSource).where(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.tenant_id == tenant_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_job(
+    db: AsyncSession, job_id: str, tenant_id: str
+) -> IngestionJob | None:
     result = await db.execute(
         select(IngestionJob).where(
             IngestionJob.id == job_id,
             IngestionJob.tenant_id == tenant_id,
         )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_latest_job(
+    db: AsyncSession, source_id: str, tenant_id: str
+) -> IngestionJob | None:
+    result = await db.execute(
+        select(IngestionJob)
+        .where(
+            IngestionJob.source_id == source_id,
+            IngestionJob.tenant_id == tenant_id,
+        )
+        .order_by(IngestionJob.created_at.desc())
+        .limit(1)
     )
     return result.scalar_one_or_none()
 
@@ -105,7 +166,7 @@ async def enqueue_ingestion_job(
     job = IngestionJob(
         source_id=source_id,
         tenant_id=tenant_id,
-        status="queued",
+        status="pending",
         created_at=datetime.utcnow(),
     )
     db.add(job)

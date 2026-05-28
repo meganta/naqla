@@ -22,7 +22,9 @@ class KnowledgeSource(Base):
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     file_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     original_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    status: Mapped[str] = mapped_column(String(50), default="pending")
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -63,4 +65,5 @@ class KnowledgeChunk(Base):
     source_type_tag: Mapped[str | None] = mapped_column(String(50), nullable=True)
     subject_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     grade_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

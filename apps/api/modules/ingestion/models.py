@@ -7,6 +7,23 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.database import Base
 
+FILE_SOURCE_TYPES = {"pdf", "docx", "pptx", "audio", "video"}
+URL_SOURCE_TYPES = {"youtube", "youtube_channel"}
+TEXT_SOURCE_TYPES = {"text", "manual"}
+UNSUPPORTED_SOURCE_TYPES = {"facebook", "instagram", "tiktok", "generic_url"}
+ALL_SOURCE_TYPES = (
+    FILE_SOURCE_TYPES | URL_SOURCE_TYPES | TEXT_SOURCE_TYPES | UNSUPPORTED_SOURCE_TYPES
+)
+
+SOURCE_STATUSES = {
+    "draft", "upload_pending", "uploaded", "processing",
+    "processed", "failed", "unsupported", "partially_processed",
+}
+JOB_STATUSES = {
+    "pending", "processing", "completed", "failed",
+    "unsupported", "partially_completed",
+}
+
 
 class KnowledgeSource(Base):
     __tablename__ = "knowledge_sources"
@@ -22,7 +39,9 @@ class KnowledgeSource(Base):
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     file_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     original_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    status: Mapped[str] = mapped_column(String(50), default="pending")
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -69,4 +88,5 @@ class KnowledgeChunk(Base):
     source_type_tag: Mapped[str | None] = mapped_column(String(50), nullable=True)
     subject_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     grade_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

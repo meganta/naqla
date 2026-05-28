@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://naqla-api-dev-uagnx6q44q-ew.a.run.app";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://naqla-api-dev-uagnx6q44q-ew.a.run.app";
 
 async function request<T>(
   path: string,
@@ -18,9 +20,34 @@ async function request<T>(
   return res.json();
 }
 
+export interface SourceRecord {
+  id: string;
+  title: string;
+  source_type: string;
+  status: string;
+  extra_meta: string | null;
+  created_at: string;
+}
+
+export interface JobRecord {
+  id: string;
+  source_id: string;
+  status: string;
+  chunks_created: number | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
 export const api = {
   auth: {
-    register: (data: { email: string; password: string; full_name: string; tenant_name: string }) =>
+    register: (data: {
+      email: string;
+      password: string;
+      full_name: string;
+      tenant_name: string;
+    }) =>
       request<{ access_token: string }>("/auth/register", {
         method: "POST",
         body: JSON.stringify(data),
@@ -30,24 +57,64 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    me: (token: string) => request<{ id: string; email: string; full_name: string; role: string; tenant_id: string }>("/auth/me", {}, token),
+    me: (token: string) =>
+      request<{
+        id: string;
+        email: string;
+        full_name: string;
+        role: string;
+        tenant_id: string;
+      }>("/auth/me", {}, token),
   },
   ingestion: {
-    createSource: (data: { title: string; source_type: string }, token: string) =>
-      request<{ source_id: string; upload_url: string; file_path: string }>("/ingestion/sources", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }, token),
+    createSource: (
+      data: {
+        title: string;
+        source_type: string;
+        original_url?: string;
+        raw_text?: string;
+      },
+      token: string
+    ) =>
+      request<{ source_id: string; upload_url: string; file_path: string }>(
+        "/ingestion/sources",
+        { method: "POST", body: JSON.stringify(data) },
+        token
+      ),
+    confirmUpload: (sourceId: string, token: string) =>
+      request<{ source_id: string; status: string }>(
+        `/ingestion/sources/${sourceId}/confirm-upload`,
+        { method: "POST", body: JSON.stringify({}) },
+        token
+      ),
     listSources: (token: string) =>
-      request<Array<{ id: string; title: string; source_type: string; status: string; created_at: string }>>("/ingestion/sources", {}, token),
+      request<SourceRecord[]>("/ingestion/sources", {}, token),
     processSource: (sourceId: string, token: string) =>
-      request<{ id: string; status: string }>(`/ingestion/sources/${sourceId}/process`, { method: "POST" }, token),
+      request<JobRecord>(
+        `/ingestion/sources/${sourceId}/process`,
+        { method: "POST" },
+        token
+      ),
+    getLatestJob: (sourceId: string, token: string) =>
+      request<JobRecord>(`/ingestion/sources/${sourceId}/job`, {}, token),
+    getJob: (jobId: string, token: string) =>
+      request<JobRecord>(`/ingestion/jobs/${jobId}`, {}, token),
   },
   copilot: {
-    chat: (data: { messages: Array<{ role: string; content: string }>; scope: string }, token: string) =>
-      request<{ text: string; tokens_used: number; model: string; provider: string; source_scope: string; context_chunks_used: number }>("/copilot/chat", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }, token),
+    chat: (
+      data: {
+        messages: Array<{ role: string; content: string }>;
+        scope: string;
+      },
+      token: string
+    ) =>
+      request<{
+        text: string;
+        tokens_used: number;
+        model: string;
+        provider: string;
+        source_scope: string;
+        context_chunks_used: number;
+      }>("/copilot/chat", { method: "POST", body: JSON.stringify(data) }, token),
   },
 };

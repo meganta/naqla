@@ -7,6 +7,7 @@ class CreateSourceRequest(BaseModel):
     title: str
     source_type: str
     original_url: str | None = None
+    raw_text: str | None = None
 
 
 class SourceResponse(BaseModel):
@@ -16,6 +17,7 @@ class SourceResponse(BaseModel):
     status: str
     file_path: str | None
     original_url: str | None
+    extra_meta: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
