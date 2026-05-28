@@ -29,6 +29,19 @@ def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
         except Exception as e:
             raise ValueError(f"DOCX extraction failed: {e}") from e
 
+    if source_type == "pptx":
+        try:
+            from pptx import Presentation
+            prs = Presentation(io.BytesIO(file_bytes))
+            lines = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text.strip():
+                        lines.append(shape.text.strip())
+            return "\n".join(lines)
+        except Exception as e:
+            raise ValueError(f"PPTX extraction failed: {e}") from e
+
     if source_type in {"text", "manual"}:
         return file_bytes.decode("utf-8", errors="replace")
 
