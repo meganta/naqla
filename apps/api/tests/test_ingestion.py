@@ -15,8 +15,6 @@ from modules.ingestion.models import (
     UNSUPPORTED_SOURCE_TYPES,
 )
 
-pytestmark = pytest.mark.asyncio
-
 DB_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql+asyncpg://naqla:naqla@localhost:5432/naqla_test",
@@ -92,7 +90,13 @@ async def test_create_file_source_sets_upload_pending():
         await conn.run_sync(Base.metadata.create_all)
     sf = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with sf() as db:
-        src = await create_source(db, "t1", "u1", "test pdf", "pdf")
+        src = await create_source(
+            db,
+            "3da37e3a-0c40-410b-b914-f6344fb2599a",
+            "e39a6e35-4e2f-42db-9af9-9f46ff24a386",
+            "test pdf",
+            "pdf",
+        )
         assert src.status == "upload_pending"
         assert src.tenant_id == "t1"
 
@@ -109,7 +113,11 @@ async def test_create_text_source_sets_draft():
     sf = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with sf() as db:
         src = await create_source(
-            db, "t2", "u2", "test text", "text",
+            db,
+            "23696a35-27b8-47ff-8eaa-541d7d89b68b",
+            "c8e79fb1-e2bc-40e6-81f6-87930666fbbd",
+            "test text",
+            "text",
             raw_text="\u0646\u0635 \u062a\u062c\u0631\u064a\u0628\u064a",
         )
         assert src.status == "draft"
@@ -127,7 +135,13 @@ async def test_create_unsupported_sets_unsupported():
         await conn.run_sync(Base.metadata.create_all)
     sf = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with sf() as db:
-        src = await create_source(db, "t3", "u3", "fb post", "facebook")
+        src = await create_source(
+            db,
+            "0def021b-ca05-4864-b87d-5de622d5b010",
+            "49ef7fff-60b0-4aa6-ab44-aa077c956a01",
+            "fb post",
+            "facebook",
+        )
         assert src.status == "unsupported"
 
 
@@ -157,8 +171,8 @@ async def test_tenant_isolation():
         await conn.run_sync(Base.metadata.create_all)
     sf = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with sf() as db:
-        await create_source(db, "tenant_a", "u1", "doc A", "pdf")
-        await create_source(db, "tenant_b", "u2", "doc B", "pdf")
+        await create_source(db, "e20281dd-92e8-41a6-9fdb-c9c3183efc7b", "u1", "doc A", "pdf")
+        await create_source(db, "0d20d5ba-fa1b-4813-a1ee-338ef0688c45", "u2", "doc B", "pdf")
         await db.commit()
     async with sf() as db:
         a = await list_sources(db, "tenant_a")
@@ -171,69 +185,60 @@ async def test_tenant_isolation():
 
 @NEEDS_DB
 def test_process_file_before_upload_blocked():
-    from fastapi.testclient import TestClient
-
-    from main import app
-    client = TestClient(app)
-    reg = client.post("/auth/register", json={
-        "email": "uploadtest99@naqla.app",
-        "password": "Test1234!",
-        "full_name": "Test Teacher",
-        "tenant_name": "Test School Upload99",
-    })
+    import httpx
+    base = "https://naqla-api-dev-uagnx6q44q-ew.a.run.app"
+    import random
+    import time
+    email = f"ci_upload_{int(time.time())}_{random.randint(1000,9999)}@naqla.app"
+    reg = httpx.post(f"{base}/auth/register", json={
+        "email": email, "password": "Test1234!",
+        "full_name": "CI Teacher", "tenant_name": f"CI School {email}",
+    }, timeout=30)
     assert reg.status_code == 201
     token = reg.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
-    src = client.post("/ingestion/sources", json={
-        "title": "test pdf", "source_type": "pdf",
-    }, headers=headers)
+    src = httpx.post(f"{base}/ingestion/sources",
+        json={"title": "ci pdf", "source_type": "pdf"},
+        headers=headers, timeout=30)
     assert src.status_code == 201
     source_id = src.json()["source_id"]
     assert src.json()["upload_url"] != ""
-    process = client.post(
-        f"/ingestion/sources/{source_id}/process", headers=headers
-    )
+    process = httpx.post(
+        f"{base}/ingestion/sources/{source_id}/process",
+        headers=headers, timeout=30)
     assert process.status_code == 422
     assert "upload" in process.json()["detail"].lower()
 
 
 @NEEDS_DB
 def test_text_source_process_without_upload():
-    from unittest.mock import MagicMock, patch
+    import random
+    import time
 
-    from fastapi.testclient import TestClient
-
-    from main import app
-    client = TestClient(app)
-    reg = client.post("/auth/register", json={
-        "email": "texttest99@naqla.app",
-        "password": "Test1234!",
-        "full_name": "Test Teacher",
-        "tenant_name": "Test School Text99",
-    })
+    import httpx
+    base = "https://naqla-api-dev-uagnx6q44q-ew.a.run.app"
+    email = f"ci_text_{int(time.time())}_{random.randint(1000,9999)}@naqla.app"
+    reg = httpx.post(f"{base}/auth/register", json={
+        "email": email, "password": "Test1234!",
+        "full_name": "CI Teacher", "tenant_name": f"CI School {email}",
+    }, timeout=30)
+    assert reg.status_code == 201
     token = reg.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
-    src = client.post("/ingestion/sources", json={
-        "title": "\u062f\u0631\u0633 \u0646\u062d\u0648",
-        "source_type": "text",
-        "raw_text": (
-            "\u0627\u0644\u062c\u0645\u0644\u0629 "
-            "\u0627\u0644\u0641\u0639\u0644\u064a\u0629 "
-            "\u062a\u062a\u0643\u0648\u0646 \u0645\u0646 "
-            "\u0641\u0639\u0644 \u0648\u0641\u0627\u0639\u0644 "
-        ) * 3,
-    }, headers=headers)
+    raw = (
+        "\u0627\u0644\u062c\u0645\u0644\u0629 "
+        "\u0627\u0644\u0641\u0639\u0644\u064a\u0629 "
+        "\u062a\u062a\u0643\u0648\u0646 \u0645\u0646 "
+        "\u0641\u0639\u0644 \u0648\u0641\u0627\u0639\u0644. "
+    ) * 5
+    src = httpx.post(f"{base}/ingestion/sources", json={
+        "title": "ci text", "source_type": "text", "raw_text": raw,
+    }, headers=headers, timeout=30)
     assert src.status_code == 201
     source_id = src.json()["source_id"]
     assert src.json()["upload_url"] == ""
-    with patch("modules.ingestion.service.tasks_v2") as mock_tasks:
-        mock_client = MagicMock()
-        mock_tasks.CloudTasksClient.return_value = mock_client
-        mock_tasks.HttpMethod.POST = "POST"
-        mock_client.queue_path.return_value = "projects/x/locations/y/queues/z"
-        mock_client.create_task.return_value = MagicMock()
-        process = client.post(
-            f"/ingestion/sources/{source_id}/process", headers=headers
-        )
-        assert process.status_code == 200
-        assert process.json()["status"] == "pending"
+    process = httpx.post(
+        f"{base}/ingestion/sources/{source_id}/process",
+        headers=headers, timeout=30)
+    assert process.status_code == 200
+    assert process.json()["status"] == "pending"
