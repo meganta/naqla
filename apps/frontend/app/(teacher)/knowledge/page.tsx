@@ -1,125 +1,355 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useAuth } from "@/lib/auth";
-import { api } from "@/lib/api-client";
 
-interface Source {
-  id: string;
-  title: string;
-  source_type: string;
-  status: string;
-  created_at: string;
-}
+import { useState, useEffect, useCallback } from "react";
+import {
+  createSource,
+  confirmUpload,
+  processSource,
+  listSources,
+  getLatestJob,
+  SourceRecord,
+} from "@/lib/api-client";
 
 const SOURCE_TYPES = [
-  { value: "pdf", label: "ملف PDF" },
-  { value: "docx", label: "ملف Word" },
-  { value: "text", label: "نص مكتوب" },
-  { value: "manual", label: "إدخال يدوي" },
+  { value: "text", label: "نص يدوي", icon: "📝" },
+  { value: "manual", label: "محتوى مخصص", icon: "✏️" },
+  { value: "pdf", label: "ملف PDF", icon: "📄" },
+  { value: "docx", label: "ملف Word", icon: "📘" },
+  { value: "pptx", label: "ملف PowerPoint", icon: "📊" },
+  { value: "youtube", label: "فيديو يوتيوب", icon: "🎬" },
+  { value: "youtube_channel", label: "قناة يوتيوب", icon: "📺" },
+  { value: "audio", label: "ملف صوتي", icon: "🎵" },
+  { value: "video", label: "ملف فيديو", icon: "🎥" },
 ];
 
+const UNSUPPORTED_TYPES = ["facebook", "instagram", "tiktok", "generic_url"];
+
 const STATUS_LABELS: Record<string, string> = {
-  pending: "في الانتظار",
-  queued: "في الطابور",
-  processing: "جارٍ المعالجة",
+  draft: "مسودة",
+  upload_pending: "بانتظار الرفع",
+  uploaded: "تم الرفع",
+  processing: "جاري المعالجة",
   processed: "تمت المعالجة",
+  failed: "فشل",
+  unsupported: "غير مدعوم",
+};
+
+const JOB_STATUS_LABELS: Record<string, string> = {
+  pending: "بانتظار التنفيذ",
+  processing: "جاري المعالجة",
+  completed: "تمت بنجاح",
   failed: "فشل",
 };
 
 export default function KnowledgePage() {
-  const { token } = useAuth();
-  const [sources, setSources] = useState<Source[]>([]);
-  const [title, setTitle] = useState("");
-  const [sourceType, setSourceType] = useState("pdf");
+  const [sources, setSources] = useState<<SourceRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
+  const [formData, setFormData] = useState({
+    title: "",
+    source_type: "text",
+    original_url: "",
+    raw_text: "",
+  });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
+  const [pollingJobs, setPollingJobs] = useState<<Set<string>>(new Set());
+
+  const fetchSources = useCallback(async () => {
+    try {
+      const data = await listSources();
+      setSources(data);
+    } catch (e) {
+      console.error("Failed to fetch sources:", e);
+    }
+  }, []);
 
   useEffect(() => {
-    if (token) api.ingestion.listSources(token).then(setSources);
-  }, [token]);
+    fetchSources();
+    const interval = setInterval(fetchSources, 5000);
+    return () => clearInterval(interval);
+  }, [fetchSources]);
 
-  async function handleCreate(e: React.FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token) return;
-    setLoading(true); setMessage("");
+    setLoading(true);
+    setUploadProgress("");
+
     try {
-      const res = await api.ingestion.createSource({ title, source_type: sourceType }, token);
-      setMessage(`تم إنشاء المصدر. رابط الرفع جاهز للاستخدام.`);
-      setTitle("");
-      const updated = await api.ingestion.listSources(token);
-      setSources(updated);
-      if (res.source_id && sourceType !== "manual") {
-        await api.ingestion.processSource(res.source_id, token);
+      const isFileType = ["pdf", "docx", "pptx", "audio", "video"].includes(
+        formData.source_type
+      );
+      const isTextType = ["text", "manual"].includes(formData.source_type);
+      const isUrlType = ["youtube", "youtube_channel"].includes(
+        formData.source_type
+      );
+
+      // Step 1: Create source
+      const createPayload: any = {
+        title: formData.title,
+        source_type: formData.source_type,
+      };
+
+      if (isTextType) {
+        createPayload.raw_text = formData.raw_text;
+      } else if (isUrlType) {
+        createPayload.original_url = formData.original_url;
       }
-    } catch {
-      setMessage("حدث خطأ أثناء إنشاء المصدر.");
+
+      const source = await createSource(createPayload);
+
+      // Step 2: Upload file if needed
+      if (isFileType && source.upload_url && selectedFile) {
+        setUploadProgress("جاري رفع الملف...");
+        const uploadRes = await fetch(source.upload_url, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/octet-stream",
+          },
+          body: selectedFile,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error("فشل رفع الملف إلى التخزين السحابي");
+        }
+
+        setUploadProgress("تم الرفع، جاري التأكيد...");
+        await confirmUpload(source.source_id);
+        setUploadProgress("تم التأكيد، جاري المعالجة...");
+      } else if (isTextType) {
+        setUploadProgress("جاري معالجة النص...");
+      } else if (isUrlType) {
+        setUploadProgress("جاري معالجة الرابط...");
+      }
+
+      // Step 3: Process source
+      await processSource(source.source_id);
+      setUploadProgress("تم إرسال المهمة بنجاح!");
+
+      // Start polling
+      setPollingJobs((prev) => new Set(prev).add(source.source_id));
+
+      // Reset form
+      setFormData({ title: "", source_type: "text", original_url: "", raw_text: "" });
+      setSelectedFile(null);
+
+      // Refresh list
+      await fetchSources();
+    } catch (error: any) {
+      setUploadProgress(`خطأ: ${error.message || "حدث خطأ غير متوقع"}`);
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  const getJobForSource = (sourceId: string) => {
+    // Jobs are fetched with sources via polling
+    return null;
+  };
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">مصادر المعرفة</h2>
-      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <h3 className="text-lg font-medium text-gray-700 mb-4">إضافة مصدر جديد</h3>
-        <form onSubmit={handleCreate} className="flex gap-4 flex-wrap">
-          <input
-            value={title} onChange={e => setTitle(e.target.value)}
-            placeholder="عنوان المصدر" required
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-right focus:outline-none focus:ring-2 focus:ring-indigo-400 min-w-48"
-          />
-          <select
-            value={sourceType} onChange={e => setSourceType(e.target.value)}
-            className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          >
-            {SOURCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-          <button
-            type="submit" disabled={loading}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg transition disabled:opacity-50"
-          >
-            {loading ? "جارٍ الإضافة..." : "إضافة"}
-          </button>
-        </form>
-        {message && <p className="mt-3 text-sm text-green-600">{message}</p>}
-      </div>
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="p-6 border-b border-gray-100">
-          <h3 className="text-lg font-medium text-gray-700">المصادر المضافة</h3>
+    <div dir="rtl" className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
+          مصادر المعرفة
+        </h1>
+
+        {/* Create Source Form */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            إضافة مصدر جديد
+          </h2>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                العنوان
+              </label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) =>
+                  setFormData({ ...formData, title: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="أدخل عنوان المصدر"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                نوع المصدر
+              </label>
+              <select
+                value={formData.source_type}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    source_type: e.target.value,
+                    original_url: "",
+                    raw_text: "",
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {SOURCE_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.icon} {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* File upload for file types */}
+            {["pdf", "docx", "pptx", "audio", "video"].includes(
+              formData.source_type
+            ) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  اختيار الملف
+                </label>
+                <input
+                  type="file"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  accept={
+                    formData.source_type === "pdf"
+                      ? ".pdf"
+                      : formData.source_type === "docx"
+                      ? ".docx"
+                      : formData.source_type === "pptx"
+                      ? ".pptx"
+                      : formData.source_type === "audio"
+                      ? "audio/*"
+                      : "video/*"
+                  }
+                  required
+                />
+                {selectedFile && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    الملف المختار: {selectedFile.name} (
+                    {(selectedFile.size / 1024 / 1024).toFixed(2)} ميجابايت)
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Text area for text/manual */}
+            {["text", "manual"].includes(formData.source_type) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  المحتوى النصي
+                </label>
+                <textarea
+                  value={formData.raw_text}
+                  onChange={(e) =>
+                    setFormData({ ...formData, raw_text: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent h-32"
+                  placeholder="أدخل النص العربي هنا..."
+                  required
+                />
+              </div>
+            )}
+
+            {/* URL input for YouTube */}
+            {["youtube", "youtube_channel"].includes(formData.source_type) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  رابط يوتيوب
+                </label>
+                <input
+                  type="url"
+                  value={formData.original_url}
+                  onChange={(e) =>
+                    setFormData({ ...formData, original_url: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  required
+                />
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "جاري المعالجة..." : "إضافة المصدر"}
+            </button>
+
+            {uploadProgress && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-blue-800">{uploadProgress}</p>
+              </div>
+            )}
+          </form>
         </div>
-        {sources.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">لا توجد مصادر بعد</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-right px-6 py-3 text-gray-500 font-medium">العنوان</th>
-                <th className="text-right px-6 py-3 text-gray-500 font-medium">النوع</th>
-                <th className="text-right px-6 py-3 text-gray-500 font-medium">الحالة</th>
-                <th className="text-right px-6 py-3 text-gray-500 font-medium">التاريخ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {sources.map(s => (
-                <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-800">{s.title}</td>
-                  <td className="px-6 py-4 text-gray-500">{s.source_type}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      s.status === "processed" ? "bg-green-100 text-green-700" :
-                      s.status === "failed" ? "bg-red-100 text-red-700" :
-                      "bg-yellow-100 text-yellow-700"
-                    }`}>
-                      {STATUS_LABELS[s.status] || s.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-gray-400">{new Date(s.created_at).toLocaleDateString("ar-EG")}</td>
-                </tr>
+
+        {/* Sources List */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            المصادر المضافة
+          </h2>
+
+          {sources.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">
+              لا توجد مصادر مضافة بعد
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {sources.map((source) => (
+                <div
+                  key={source.id}
+                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">
+                        {source.title}
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        النوع: {SOURCE_TYPES.find((t) => t.value === source.source_type)?.label || source.source_type}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        الحالة:{" "}
+                        <span
+                          className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                            source.status === "processed"
+                              ? "bg-green-100 text-green-800"
+                              : source.status === "failed"
+                              ? "bg-red-100 text-red-800"
+                              : source.status === "processing"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {STATUS_LABELS[source.status] || source.status}
+                        </span>
+                      </p>
+                      {source.original_url && (
+                        <p className="text-sm text-gray-500 truncate max-w-md">
+                          الرابط: {source.original_url}
+                        </p>
+                      )}
+                      {source.file_path && (
+                        <p className="text-sm text-gray-500 truncate max-w-md">
+                          الملف: {source.file_path}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs text-gray-400">
+                        {new Date(source.created_at).toLocaleDateString("ar-SA")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
