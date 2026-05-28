@@ -1,4 +1,7 @@
 import io
+import json
+import os
+import tempfile
 from datetime import datetime
 
 from google.cloud import storage
@@ -24,8 +27,8 @@ def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
     if source_type == "docx":
         try:
             import docx
-            doc = docx.Document(io.BytesIO(file_bytes))
-            return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            document = docx.Document(io.BytesIO(file_bytes))
+            return "\n".join(p.text for p in document.paragraphs if p.text.strip())
         except Exception as e:
             raise ValueError(f"DOCX extraction failed: {e}") from e
 
@@ -49,7 +52,6 @@ def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
         f"Extraction not yet implemented for source type: {source_type}. "
         "This type will be supported in a future update."
     )
-
 
 
 def extract_video_id(url: str) -> str | None:
@@ -89,12 +91,52 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
         return None
 
 
+def download_youtube_audio(video_id: str, output_dir: str) -> str:
+    """Download audio from YouTube video as MP3. Returns file path."""
+    import yt_dlp
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }
+        ],
+        "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
+        "quiet": True,
+        "no_warnings": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+
+    mp3_path = os.path.join(output_dir, f"{video_id}.mp3")
+    if not os.path.exists(mp3_path):
+        raise ValueError(f"Audio download failed for {video_id}")
+    return mp3_path
+
+
+def transcribe_audio_with_whisper(audio_path: str, api_key: str) -> str:
+    """Transcribe audio file using OpenAI Whisper."""
+    import openai
+
+    client = openai.OpenAI(api_key=api_key)
+    with open(audio_path, "rb") as audio_file:
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="ar",
+        )
+    return transcript.text
+
+
 def chunk_transcript_with_timestamps(
     segments: list[dict],
     source_type_tag: str,
     base_meta: dict,
 ) -> list[dict]:
-    import json
     from arabic_processing.chunker import MAX_CHUNK_CHARS, MIN_CHUNK_CHARS
 
     chunks = []
@@ -160,6 +202,122 @@ def extract_youtube_chunks(url: str, source_type: str) -> list[dict]:
     return chunk_transcript_with_timestamps(segments, source_type, base_meta)
 
 
+def extract_youtube_chunks_with_fallback(
+    url: str, source_type: str, api_key: str | None = None
+) -> list[dict]:
+    """Try captions first, fallback to Whisper transcription if no captions."""
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise ValueError(
+            f"Could not extract video ID from URL: {url}. "
+            "Provide a valid YouTube video URL."
+        )
+
+    base_meta = {
+        "source_type": source_type,
+        "source_url": url,
+        "video_id": video_id,
+        "language": "ar",
+    }
+
+    # Try captions first
+    segments = get_youtube_transcript(video_id)
+    if segments:
+        return chunk_transcript_with_timestamps(segments, source_type, base_meta)
+
+    # Fallback: transcribe audio with Whisper
+    if not api_key:
+        raise ValueError(
+            f"No transcript available for video {video_id} and "
+            "no OpenAI API key configured for transcription fallback."
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            audio_path = download_youtube_audio(video_id, tmpdir)
+            transcribed_text = transcribe_audio_with_whisper(audio_path, api_key)
+        except Exception as e:
+            raise ValueError(
+                f"Transcription fallback failed for video {video_id}: {e}"
+            ) from e
+
+    if not transcribed_text.strip():
+        raise ValueError(
+            f"Transcription produced no text for video {video_id}."
+        )
+
+    # Chunk the transcribed text (no timestamps available from Whisper)
+    from arabic_processing.chunker import chunk_arabic_text
+    chunks = chunk_arabic_text(transcribed_text, source_type_tag=source_type)
+    for chunk in chunks:
+        chunk["extra_meta"] = json.dumps({
+            **base_meta,
+            "transcribed": True,
+            "transcription_provider": "openai_whisper",
+        })
+    return chunks
+
+
+def get_channel_video_ids(
+    channel_identifier: str, api_key: str, max_videos: int = 25
+) -> list[str]:
+    """Discover video IDs from a YouTube channel using Data API v3."""
+    import httpx
+
+    channel_id = None
+    if channel_identifier.startswith("UC") and len(channel_identifier) == 24:
+        channel_id = channel_identifier
+    else:
+        search_url = "https://www.googleapis.com/youtube/v3/search"
+        params = {
+            "part": "snippet",
+            "q": channel_identifier,
+            "type": "channel",
+            "maxResults": 1,
+            "key": api_key,
+        }
+        resp = httpx.get(search_url, params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("items", [])
+        if not items:
+            raise ValueError(f"Could not find YouTube channel: {channel_identifier}")
+        channel_id = items[0]["snippet"]["channelId"]
+
+    channel_url = "https://www.googleapis.com/youtube/v3/channels"
+    params = {
+        "part": "contentDetails",
+        "id": channel_id,
+        "key": api_key,
+    }
+    resp = httpx.get(channel_url, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    items = data.get("items", [])
+    if not items:
+        raise ValueError(f"Could not retrieve channel details for {channel_id}")
+
+    uploads_playlist_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+    video_ids = []
+    playlist_url = "https://www.googleapis.com/youtube/v3/playlistItems"
+    params = {
+        "part": "contentDetails",
+        "playlistId": uploads_playlist_id,
+        "maxResults": min(max_videos, 50),
+        "key": api_key,
+    }
+    resp = httpx.get(playlist_url, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    for item in data.get("items", []):
+        video_ids.append(item["contentDetails"]["videoId"])
+        if len(video_ids) >= max_videos:
+            break
+
+    return video_ids
+
+
 async def process_ingestion_job(
     db,
     job_id: str,
@@ -168,6 +326,7 @@ async def process_ingestion_job(
     bucket_name: str,
 ) -> int:
     from arabic_processing.chunker import chunk_arabic_text
+    from core.config import settings
     from ingestion_models import IngestionJob, KnowledgeChunk, KnowledgeSource
 
     job_result = await db.execute(
@@ -198,6 +357,8 @@ async def process_ingestion_job(
         return 0
 
     raw_chunks: list[dict] = []
+    text = None
+
     try:
         if source.source_type in {"text", "manual"}:
             text = source.raw_text or ""
@@ -205,6 +366,7 @@ async def process_ingestion_job(
                 raise ValueError(
                     "No text content found. Provide raw_text when creating a text/manual source."
                 )
+
         elif source.source_type == "youtube":
             url = source.original_url or ""
             if not url:
@@ -212,16 +374,63 @@ async def process_ingestion_job(
                     "No URL provided for YouTube source. "
                     "Set original_url when creating a youtube source."
                 )
-            raw_chunks = extract_youtube_chunks(url, "youtube")
+            raw_chunks = extract_youtube_chunks_with_fallback(
+                url, "youtube", api_key=settings.openai_api_key or None
+            )
             text = None
+
+        elif source.source_type == "youtube_channel":
+            url = source.original_url or ""
+            if not url:
+                raise ValueError(
+                    "No URL or handle provided for YouTube channel source. "
+                    "Set original_url when creating a youtube_channel source."
+                )
+            if not settings.youtube_api_key:
+                raise ValueError(
+                    "YouTube Data API key is not configured. "
+                    "Set YOUTUBE_API_KEY in worker environment."
+                )
+            channel_id = url.replace("https://www.youtube.com/", "").replace("https://youtube.com/", "")
+            if channel_id.startswith("@"):
+                channel_id = channel_id[1:]
+            video_ids = get_channel_video_ids(
+                channel_id, settings.youtube_api_key, settings.youtube_channel_max_videos
+            )
+            if not video_ids:
+                raise ValueError(f"No videos found for channel: {channel_id}")
+            raw_chunks = [
+                {
+                    "content_text": f"YouTube video: https://www.youtube.com/watch?v={vid}",
+                    "chunk_index": i,
+                    "char_count": len(f"https://www.youtube.com/watch?v={vid}") + 20,
+                    "source_type_tag": "youtube_channel",
+                    "extra_meta": json.dumps({
+                        "video_id": vid,
+                        "channel_identifier": channel_id,
+                        "index": i,
+                    }),
+                }
+                for i, vid in enumerate(video_ids)
+            ]
+            text = None
+
+        elif source.source_type in {"audio", "video"}:
+            raise ValueError(
+                f"Source type '{source.source_type}' requires transcription. "
+                "Audio/video transcription is not yet implemented."
+            )
+
         elif source.file_path:
             file_bytes = download_file(bucket_name, source.file_path)
             text = extract_text_from_bytes(file_bytes, source.source_type)
+
         else:
             raise ValueError(
                 f"No file_path and no raw_text for source type '{source.source_type}'. "
                 "Upload the file first and call confirm-upload."
             )
+
     except ValueError as e:
         job.status = "failed"
         job.error_message = str(e)
