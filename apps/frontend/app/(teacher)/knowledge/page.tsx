@@ -42,6 +42,12 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 };
 
 export default function KnowledgePage() {
+  const [token, setToken] = useState<string>("");
+  
+  useEffect(() => {
+    const stored = localStorage.getItem("naqla_token");
+    if (stored) setToken(stored);
+  }, []);
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -56,7 +62,7 @@ export default function KnowledgePage() {
 
   const fetchSources = useCallback(async () => {
     try {
-      const data = await listSources();
+      const data = await listSources(token);
       setSources(data);
     } catch (e) {
       console.error("Failed to fetch sources:", e);
@@ -95,7 +101,7 @@ export default function KnowledgePage() {
         createPayload.original_url = formData.original_url;
       }
 
-      const source = await createSource(createPayload);
+      const source = await createSource(createPayload, token);
 
       // Step 2: Upload file if needed
       if (isFileType && source.upload_url && selectedFile) {
@@ -113,7 +119,7 @@ export default function KnowledgePage() {
         }
 
         setUploadProgress("تم الرفع، جاري التأكيد...");
-        await confirmUpload(source.source_id);
+        await confirmUpload(source.source_id, token);
         setUploadProgress("تم التأكيد، جاري المعالجة...");
       } else if (isTextType) {
         setUploadProgress("جاري معالجة النص...");
@@ -122,7 +128,7 @@ export default function KnowledgePage() {
       }
 
       // Step 3: Process source
-      await processSource(source.source_id);
+      await processSource(source.source_id, token);
       setUploadProgress("تم إرسال المهمة بنجاح!");
 
       // Start polling
