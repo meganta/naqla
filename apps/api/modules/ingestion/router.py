@@ -16,16 +16,16 @@ from modules.ingestion.schemas import (
     UploadURLResponse,
 )
 from modules.ingestion.service import (
-    delete_source,
-    update_source_title,
     confirm_upload,
     create_source,
+    delete_source,
     enqueue_ingestion_job,
     generate_signed_upload_url,
     get_job,
     get_latest_job,
     get_source,
     list_sources,
+    update_source_title,
 )
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])

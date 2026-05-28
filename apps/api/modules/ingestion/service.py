@@ -13,6 +13,7 @@ from modules.ingestion.models import (
     FILE_SOURCE_TYPES,
     UNSUPPORTED_SOURCE_TYPES,
     IngestionJob,
+    KnowledgeChunk,
     KnowledgeSource,
 )
 
