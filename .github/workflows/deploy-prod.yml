@@ -1,0 +1,110 @@
+name: deploy-prod
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: deploy to prod
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: configure docker for artifact registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: build and push api
+        run: |
+          docker build -t ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:prod-${{ github.sha }} apps/api
+          docker push ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:prod-${{ github.sha }}
+          docker tag ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:prod-${{ github.sha }} \
+                     ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:prod-latest
+          docker push ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:prod-latest
+
+      - name: build and push worker
+        run: |
+          docker build -t ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-worker:prod-${{ github.sha }} services/worker
+          docker push ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-worker:prod-${{ github.sha }}
+
+      - name: build and push frontend
+        run: |
+          docker build -t ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-frontend:prod-${{ github.sha }} apps/frontend
+          docker push ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-frontend:prod-${{ github.sha }}
+
+      - name: deploy api to cloud run prod
+        run: |
+          gcloud run deploy naqla-api-prod \
+            --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:prod-${{ github.sha }} \
+            --region=${{ vars.GCP_REGION }} \
+            --service-account=${{ vars.GCP_API_SA }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=10 \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=30 \
+            --set-env-vars="ENVIRONMENT=prod,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-prod,CLOUD_TASKS_QUEUE=naqla-ingestion-prod,CLOUD_TASKS_LOCATION=${{ vars.GCP_REGION }},AI_PROVIDER=gemini,AI_MODEL=gemini-1.5-flash" \
+            --set-secrets="JWT_SECRET=naqla-jwt-secret-prod:latest,GEMINI_API_KEY=naqla-gemini-api-key-prod:latest,DATABASE_URL=naqla-db-password-prod:latest" \
+            --project=${{ vars.GCP_PROJECT_ID }}
+
+      - name: deploy worker to cloud run prod
+        run: |
+          gcloud run deploy naqla-worker-prod \
+            --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-worker:prod-${{ github.sha }} \
+            --region=${{ vars.GCP_REGION }} \
+            --service-account=${{ vars.GCP_WORKER_SA }} \
+            --platform=managed \
+            --no-allow-unauthenticated \
+            --min-instances=0 \
+            --max-instances=5 \
+            --memory=1Gi \
+            --cpu=1 \
+            --timeout=300 \
+            --set-env-vars="ENVIRONMENT=prod,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-prod,AI_PROVIDER=gemini,AI_MODEL=gemini-1.5-flash" \
+            --set-secrets="GEMINI_API_KEY=naqla-gemini-api-key-prod:latest,DATABASE_URL=naqla-db-password-prod:latest" \
+            --project=${{ vars.GCP_PROJECT_ID }}
+
+      - name: deploy frontend to cloud run prod
+        run: |
+          gcloud run deploy naqla-frontend-prod \
+            --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-frontend:prod-${{ github.sha }} \
+            --region=${{ vars.GCP_REGION }} \
+            --service-account=${{ vars.GCP_FRONTEND_SA }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=5 \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=30 \
+            --set-env-vars="ENVIRONMENT=prod" \
+            --project=${{ vars.GCP_PROJECT_ID }}
+
+      - name: smoke test
+        run: |
+          API_URL=$(gcloud run services describe naqla-api-prod \
+            --region=${{ vars.GCP_REGION }} \
+            --project=${{ vars.GCP_PROJECT_ID }} \
+            --format="value(status.url)")
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health")
+          if [ "$STATUS" != "200" ]; then
+            echo "Smoke test failed with status $STATUS"
+            exit 1
+          fi
+          echo "Smoke test passed"

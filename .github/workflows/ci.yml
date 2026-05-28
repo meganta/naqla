@@ -1,0 +1,105 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  lint-and-test:
+    name: lint, typecheck, test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: naqla
+          POSTGRES_PASSWORD: naqla
+          POSTGRES_DB: naqla_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install uv
+        run: pip install uv
+
+      - name: install api deps
+        working-directory: apps/api
+        run: uv sync
+
+      - name: install worker deps
+        working-directory: services/worker
+        run: uv sync
+
+      - name: lint api
+        working-directory: apps/api
+        run: uv run ruff check .
+
+      - name: lint worker
+        working-directory: services/worker
+        run: uv run ruff check .
+
+      - name: test api
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://naqla:naqla@localhost:5432/naqla_test
+          JWT_SECRET: ci-test-secret
+          ENVIRONMENT: dev
+        run: uv run pytest tests/ -v
+
+      - name: test worker
+        working-directory: services/worker
+        env:
+          ENVIRONMENT: dev
+        run: uv run pytest tests/ -v
+
+      - name: set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: install pnpm
+        run: npm install -g pnpm
+
+      - name: install frontend deps
+        working-directory: apps/frontend
+        run: pnpm install
+
+      - name: lint frontend
+        working-directory: apps/frontend
+        run: pnpm lint
+
+      - name: typecheck frontend
+        working-directory: apps/frontend
+        run: pnpm typecheck
+
+  build:
+    name: docker build check
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build api image
+        run: docker build -t naqla-api:ci apps/api
+
+      - name: build worker image
+        run: docker build -t naqla-worker:ci services/worker
+
+      - name: build frontend image
+        run: docker build -t naqla-frontend:ci apps/frontend
