@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     environment: str = "dev"
-    database_url: str = ""
+    database_url: str = "postgresql+asyncpg://naqla:placeholder@localhost/naqla_dev"
     gcp_project_id: str = "naqla-mvp"
     gcp_region: str = "europe-west1"
     gcs_bucket_name: str = "naqla-uploads-dev"

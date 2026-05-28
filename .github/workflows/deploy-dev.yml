@@ -64,8 +64,8 @@ jobs:
             --memory=512Mi \
             --cpu=1 \
             --timeout=30 \
-            --set-env-vars="ENVIRONMENT=dev,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,CLOUD_TASKS_QUEUE=naqla-ingestion-dev,CLOUD_TASKS_LOCATION=${{ vars.GCP_REGION }},AI_PROVIDER=gemini,AI_MODEL=gemini-1.5-flash" \
-            --set-secrets="JWT_SECRET=naqla-jwt-secret-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest,DATABASE_URL=naqla-db-password-dev:latest" \
+            --set-env-vars="ENVIRONMENT=dev,PORT=8080,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,CLOUD_TASKS_QUEUE=naqla-ingestion-dev,CLOUD_TASKS_LOCATION=${{ vars.GCP_REGION }},AI_PROVIDER=gemini,AI_MODEL=gemini-1.5-flash,DATABASE_URL=postgresql+asyncpg://naqla:placeholder@localhost/naqla_dev" \
+            --set-secrets="JWT_SECRET=naqla-jwt-secret-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest" \
             --project=${{ vars.GCP_PROJECT_ID }}
 
       - name: deploy worker to cloud run dev
@@ -81,8 +81,8 @@ jobs:
             --memory=1Gi \
             --cpu=1 \
             --timeout=300 \
-            --set-env-vars="ENVIRONMENT=dev,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,AI_PROVIDER=gemini,AI_MODEL=gemini-1.5-flash" \
-            --set-secrets="GEMINI_API_KEY=naqla-gemini-api-key-dev:latest,DATABASE_URL=naqla-db-password-dev:latest" \
+            --set-env-vars="ENVIRONMENT=dev,PORT=8080,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,AI_PROVIDER=gemini,AI_MODEL=gemini-1.5-flash,DATABASE_URL=postgresql+asyncpg://naqla:placeholder@localhost/naqla_dev" \
+            --set-secrets="GEMINI_API_KEY=naqla-gemini-api-key-dev:latest" \
             --project=${{ vars.GCP_PROJECT_ID }}
 
       - name: deploy frontend to cloud run dev
