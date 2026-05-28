@@ -89,6 +89,19 @@ jobs:
             --set-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
             --project=${{ vars.GCP_PROJECT_ID }}
 
+      - name: route traffic to latest api revision
+        run: |
+          LATEST=$(gcloud run revisions list \
+            --service=naqla-api-dev \
+            --region=${{ vars.GCP_REGION }} \
+            --project=${{ vars.GCP_PROJECT_ID }} \
+            --format="value(name)" \
+            --limit=1)
+          gcloud run services update-traffic naqla-api-dev \
+            --region=${{ vars.GCP_REGION }} \
+            --project=${{ vars.GCP_PROJECT_ID }} \
+            --to-revisions=$LATEST=100
+
       - name: allow unauthenticated access to api
         run: |
           gcloud run services add-iam-policy-binding naqla-api-dev \
