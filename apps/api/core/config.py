@@ -15,9 +15,11 @@ class Settings(BaseSettings):
     gcs_bucket_name: str = "naqla-uploads-dev"
     cloud_tasks_queue: str = "naqla-ingestion-dev"
     cloud_tasks_location: str = "europe-west1"
-    ai_provider: str = "gemini"
-    ai_model: str = "gemini-1.5-flash"
+    ai_provider: str = "openai"
+    ai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
     worker_service_url: str = "http://localhost:8001"
     cors_origins: list[str] = ["http://localhost:3000"]
 
