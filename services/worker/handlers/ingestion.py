@@ -51,6 +51,115 @@ def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
     )
 
 
+
+def extract_video_id(url: str) -> str | None:
+    import re
+    patterns = [
+        r"(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})",
+    ]
+    for p in patterns:
+        m = re.search(p, url)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _fmt_seconds(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def get_youtube_transcript(video_id: str) -> list[dict] | None:
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        transcript = YouTubeTranscriptApi.get_transcript(
+            video_id, languages=["ar", "en"]
+        )
+        return [
+            {
+                "text": t["text"],
+                "start": _fmt_seconds(t["start"]),
+                "end": _fmt_seconds(t["start"] + t["duration"]),
+            }
+            for t in transcript
+        ]
+    except Exception:
+        return None
+
+
+def chunk_transcript_with_timestamps(
+    segments: list[dict],
+    source_type_tag: str,
+    base_meta: dict,
+) -> list[dict]:
+    import json
+    from arabic_processing.chunker import MAX_CHUNK_CHARS, MIN_CHUNK_CHARS
+
+    chunks = []
+    current_text = ""
+    current_start = None
+    current_end = None
+    chunk_index = 0
+
+    for seg in segments:
+        text = seg.get("text", "").strip()
+        if not text:
+            continue
+        if current_start is None:
+            current_start = seg.get("start", "")
+        current_text = f"{current_text} {text}".strip() if current_text else text
+        current_end = seg.get("end", "")
+        if len(current_text) >= MAX_CHUNK_CHARS:
+            meta = {**base_meta, "start_time": current_start, "end_time": current_end}
+            chunks.append({
+                "content_text": current_text,
+                "chunk_index": chunk_index,
+                "char_count": len(current_text),
+                "source_type_tag": source_type_tag,
+                "extra_meta": json.dumps(meta),
+            })
+            chunk_index += 1
+            current_text = ""
+            current_start = None
+            current_end = None
+
+    if current_text and len(current_text) >= MIN_CHUNK_CHARS:
+        meta = {**base_meta, "start_time": current_start, "end_time": current_end}
+        chunks.append({
+            "content_text": current_text,
+            "chunk_index": chunk_index,
+            "char_count": len(current_text),
+            "source_type_tag": source_type_tag,
+            "extra_meta": json.dumps(meta),
+        })
+
+    return chunks
+
+
+def extract_youtube_chunks(url: str, source_type: str) -> list[dict]:
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise ValueError(
+            f"Could not extract video ID from URL: {url}. "
+            "Provide a valid YouTube video URL."
+        )
+    base_meta = {
+        "source_type": source_type,
+        "source_url": url,
+        "video_id": video_id,
+        "language": "ar",
+    }
+    segments = get_youtube_transcript(video_id)
+    if not segments:
+        raise ValueError(
+            f"No transcript available for video {video_id}. "
+            "The video must have Arabic or English captions enabled."
+        )
+    return chunk_transcript_with_timestamps(segments, source_type, base_meta)
+
+
 async def process_ingestion_job(
     db,
     job_id: str,
@@ -88,6 +197,7 @@ async def process_ingestion_job(
         await db.flush()
         return 0
 
+    raw_chunks: list[dict] = []
     try:
         if source.source_type in {"text", "manual"}:
             text = source.raw_text or ""
@@ -95,6 +205,15 @@ async def process_ingestion_job(
                 raise ValueError(
                     "No text content found. Provide raw_text when creating a text/manual source."
                 )
+        elif source.source_type == "youtube":
+            url = source.original_url or ""
+            if not url:
+                raise ValueError(
+                    "No URL provided for YouTube source. "
+                    "Set original_url when creating a youtube source."
+                )
+            raw_chunks = extract_youtube_chunks(url, "youtube")
+            text = None
         elif source.file_path:
             file_bytes = download_file(bucket_name, source.file_path)
             text = extract_text_from_bytes(file_bytes, source.source_type)
@@ -111,7 +230,8 @@ async def process_ingestion_job(
         await db.flush()
         return 0
 
-    raw_chunks = chunk_arabic_text(text, source_type_tag=source.source_type)
+    if text is not None:
+        raw_chunks = chunk_arabic_text(text, source_type_tag=source.source_type)
 
     for raw in raw_chunks:
         chunk = KnowledgeChunk(

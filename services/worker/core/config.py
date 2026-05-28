@@ -9,10 +9,13 @@ class Settings(BaseSettings):
     gcp_project_id: str = "naqla-mvp"
     gcp_region: str = "europe-west1"
     gcs_bucket_name: str = "naqla-uploads-dev"
-    ai_provider: str = "gemini"
-    ai_model: str = "gemini-1.5-flash"
+    ai_provider: str = "openai"
+    ai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
+    openai_api_key: str = ""
     api_service_url: str = "http://localhost:8000"
+    youtube_api_key: str = ""
+    youtube_channel_max_videos: int = 25
 
 
 settings = Settings()
