@@ -21,7 +21,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     worker_service_url: str = "http://localhost:8001"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins_str: str = "http://localhost:3000"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins_str.split(",")]
 
     @property
     def is_production(self) -> bool:
