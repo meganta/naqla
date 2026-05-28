@@ -63,7 +63,7 @@ jobs:
           REGION=${{ vars.GCP_REGION }}
           PROJECT=${{ vars.GCP_PROJECT_ID }}
           JOB=naqla-migrate-dev
-          ARGS="--image=$IMAGE --region=$REGION --service-account=${{ vars.GCP_API_SA }} --set-secrets=DATABASE_URL=naqla-db-password-dev:latest --set-env-vars=ENVIRONMENT=dev --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev --max-retries=1 --project=$PROJECT"
+          ARGS="--image=$IMAGE --region=$REGION --service-account=${{ vars.GCP_API_SA }} --set-secrets=DATABASE_URL=naqla-db-password-dev:latest --set-env-vars=ENVIRONMENT=dev --set-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev --max-retries=1 --project=$PROJECT"
           if gcloud run jobs describe $JOB --region=$REGION --project=$PROJECT &>/dev/null; then
             gcloud run jobs update $JOB $ARGS
           else
@@ -86,7 +86,7 @@ jobs:
             --timeout=30 \
             --set-env-vars="ENVIRONMENT=dev,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,CLOUD_TASKS_QUEUE=naqla-ingestion-dev,CLOUD_TASKS_LOCATION=${{ vars.GCP_REGION }},AI_PROVIDER=gemini,AI_MODEL=gemini-1.5-flash" \
             --set-secrets="JWT_SECRET=naqla-jwt-secret-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest,DATABASE_URL=naqla-db-password-dev:latest" \
-            --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
+            --set-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
             --project=${{ vars.GCP_PROJECT_ID }}
 
       - name: allow unauthenticated access to api
