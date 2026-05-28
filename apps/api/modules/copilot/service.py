@@ -1,8 +1,8 @@
-from packages.ai_provider.base import AIMessage, AIProvider, SourceScope
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from modules.ingestion.models import KnowledgeChunk
+from providers.ai_provider.base import AIMessage, AIProvider, SourceScope
 
 ARABIC_SUBJECT_SCOPE = (
     "أنت مساعد تعليمي متخصص في اللغة العربية للمرحلة الثانوية المصرية. "
@@ -58,7 +58,7 @@ async def run_copilot(
     max_tokens: int = 1000,
     temperature: float = 0.7,
 ):
-    from packages.ai_provider.base import AIResponse
+    from providers.ai_provider.base import AIResponse
 
     query = messages[-1].content if messages else ''
     context_chunks = await retrieve_context(db, tenant_id, query, scope)

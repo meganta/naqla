@@ -1,5 +1,4 @@
 import io
-import sys
 from datetime import datetime
 
 from google.cloud import storage
@@ -46,14 +45,8 @@ async def process_ingestion_job(
 ) -> int:
     from sqlalchemy import select
 
-    sys.path.insert(0, "/app")
-    from packages.arabic_processing.chunker import chunk_arabic_text
-
-    from apps.api.modules.ingestion.models import (
-        IngestionJob,
-        KnowledgeChunk,
-        KnowledgeSource,
-    )
+    from arabic_processing.chunker import chunk_arabic_text
+    from ingestion_models import IngestionJob, KnowledgeChunk, KnowledgeSource
 
     job_result = await db.execute(select(IngestionJob).where(IngestionJob.id == job_id))
     job = job_result.scalar_one_or_none()

@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends
-from packages.ai_provider.base import AIMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.ai import get_ai_provider
@@ -7,6 +6,7 @@ from core.database import get_db
 from core.security import get_current_user
 from modules.copilot.schemas import CopilotRequest, CopilotResponse
 from modules.copilot.service import run_copilot
+from providers.ai_provider.base import AIMessage
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 

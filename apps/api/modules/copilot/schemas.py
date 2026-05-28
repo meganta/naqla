@@ -1,5 +1,6 @@
-from packages.ai_provider.base import SourceScope
 from pydantic import BaseModel
+
+from providers.ai_provider.base import SourceScope
 
 
 class ChatMessage(BaseModel):
