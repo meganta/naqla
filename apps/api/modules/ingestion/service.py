@@ -1,6 +1,9 @@
 import json
 from datetime import datetime, timedelta
 
+import google.auth
+import google.auth.transport.requests
+from google.auth import impersonated_credentials
 from google.cloud import storage, tasks_v2
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +19,6 @@ ALLOWED_SOURCE_TYPES = {
 def generate_signed_upload_url(
     source_id: str, source_type: str, tenant_id: str
 ) -> tuple[str, str]:
-    client = storage.Client()
-    bucket = client.bucket(settings.gcs_bucket_name)
     extension_map = {
         "pdf": "pdf",
         "docx": "docx",
@@ -28,12 +29,30 @@ def generate_signed_upload_url(
     }
     ext = extension_map.get(source_type, "bin")
     file_path = f"uploads/{tenant_id}/{source_id}.{ext}"
+
+    credentials, project = google.auth.default()
+    auth_request = google.auth.transport.requests.Request()
+    credentials.refresh(auth_request)
+
+    service_account_email = (
+        f"naqla-api-sa@{settings.gcp_project_id}.iam.gserviceaccount.com"
+    )
+    signing_credentials = impersonated_credentials.Credentials(
+        source_credentials=credentials,
+        target_principal=service_account_email,
+        target_scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        lifetime=300,
+    )
+
+    client = storage.Client(credentials=signing_credentials)
+    bucket = client.bucket(settings.gcs_bucket_name)
     blob = bucket.blob(file_path)
     upload_url = blob.generate_signed_url(
         version="v4",
         expiration=timedelta(minutes=15),
         method="PUT",
         content_type="application/octet-stream",
+        credentials=signing_credentials,
     )
     return upload_url, file_path
 
@@ -98,7 +117,11 @@ async def enqueue_ingestion_job(
         settings.cloud_tasks_location,
         settings.cloud_tasks_queue,
     )
-    payload = json.dumps({"job_id": job.id, "source_id": source_id, "tenant_id": tenant_id})
+    payload = json.dumps({
+        "job_id": job.id,
+        "source_id": source_id,
+        "tenant_id": tenant_id,
+    })
     task = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
