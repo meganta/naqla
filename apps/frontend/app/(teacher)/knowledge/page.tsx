@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/lib/auth";
 import {
   createSource,
   confirmUpload,
@@ -42,12 +43,7 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 };
 
 export default function KnowledgePage() {
-  const [token, setToken] = useState<string>("");
-  
-  useEffect(() => {
-    const stored = localStorage.getItem("naqla_token");
-    if (stored) setToken(stored);
-  }, []);
+  const { token } = useAuth();
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -61,6 +57,7 @@ export default function KnowledgePage() {
   const [pollingJobs, setPollingJobs] = useState<Set<string>>(new Set());
 
   const fetchSources = useCallback(async () => {
+    if (!token) return;
     try {
       const data = await listSources(token);
       setSources(data);
@@ -77,6 +74,10 @@ export default function KnowledgePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!token) {
+      setUploadProgress("يجب تسجيل الدخول أولاً");
+      return;
+    }
     setLoading(true);
     setUploadProgress("");
 
