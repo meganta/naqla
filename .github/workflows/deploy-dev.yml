@@ -123,7 +123,7 @@ jobs:
             --memory=1Gi \
             --cpu=1 \
             --timeout=300 \
-            --set-env-vars="ENVIRONMENT=dev,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,AI_PROVIDER=openai,AI_MODEL=gpt-4o-mini" --set-secrets="DATABASE_URL=naqla-db-password-dev:latest,OPENAI_API_KEY=naqla-openai-api-key-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest" \
+            --set-env-vars="ENVIRONMENT=dev,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,AI_PROVIDER=openai,AI_MODEL=gpt-4o-mini" --set-secrets="DATABASE_URL=naqla-db-password-dev:latest,OPENAI_API_KEY=naqla-openai-api-key-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest" --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
             --project=${{ vars.GCP_PROJECT_ID }}
 
       - name: deploy frontend
