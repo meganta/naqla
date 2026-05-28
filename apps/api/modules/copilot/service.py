@@ -38,7 +38,8 @@ def build_system_prompt(scope: SourceScope, context_chunks: list[KnowledgeChunk]
             f"[مقطع {i + 1}]: {chunk.content_text}"
             for i, chunk in enumerate(context_chunks)
         )
-        prompt += f"استند إلى المعلومات التالية من قاعدة معرفة المعلم عند الإجابة:{chr(10)}{chr(10)}{context_text}"
+        header = "استند إلى المعلومات التالية من قاعدة معرفة المعلم عند الإجابة:"
+        prompt += f"{header}{chr(10)}{chr(10)}{context_text}"
     if scope == SourceScope.TEACHER_KB:
         prompt += "أجب فقط بناءً على المعلومات المقدمة من المعلم."
     elif scope == SourceScope.TEACHER_AND_CURRICULUM:
