@@ -73,19 +73,19 @@ jobs:
           node-version: "20"
 
       - name: install pnpm
-        run: npm install -g pnpm
+        run: echo 'using npm'
 
       - name: install frontend deps
         working-directory: apps/frontend
-        run: pnpm install
+        run: npm ci
 
       - name: lint frontend
         working-directory: apps/frontend
-        run: pnpm lint
+        run: npm run lint
 
       - name: typecheck frontend
         working-directory: apps/frontend
-        run: pnpm typecheck
+        run: npm run typecheck
 
   build:
     name: docker build check
