@@ -24,7 +24,7 @@ jobs:
       - name: set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: configure docker for artifact registry
+      - name: configure docker
         run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
 
       - name: build and push api
@@ -34,6 +34,12 @@ jobs:
           docker tag ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:dev-${{ github.sha }} \
                      ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:dev-latest
           docker push ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:dev-latest
+
+      - name: build and push migrate
+        run: |
+          docker build -f apps/api/Dockerfile.migrate \
+            -t ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-migrate:dev-${{ github.sha }} apps/api
+          docker push ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-migrate:dev-${{ github.sha }}
 
       - name: build and push worker
         run: |
@@ -51,7 +57,32 @@ jobs:
                      ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-frontend:dev-latest
           docker push ${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-frontend:dev-latest
 
-      - name: deploy api to cloud run dev
+      - name: run database migrations
+        run: |
+          gcloud run jobs create naqla-migrate-dev \
+            --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-migrate:dev-${{ github.sha }} \
+            --region=${{ vars.GCP_REGION }} \
+            --service-account=${{ vars.GCP_API_SA }} \
+            --set-secrets="DATABASE_URL=naqla-db-password-dev:latest" \
+            --set-env-vars="ENVIRONMENT=dev" \
+            --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
+            --max-retries=1 \
+            --project=${{ vars.GCP_PROJECT_ID }} 2>/dev/null || \
+          gcloud run jobs update naqla-migrate-dev \
+            --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-migrate:dev-${{ github.sha }} \
+            --region=${{ vars.GCP_REGION }} \
+            --service-account=${{ vars.GCP_API_SA }} \
+            --set-secrets="DATABASE_URL=naqla-db-password-dev:latest" \
+            --set-env-vars="ENVIRONMENT=dev" \
+            --add-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
+            --max-retries=1 \
+            --project=${{ vars.GCP_PROJECT_ID }}
+          gcloud run jobs execute naqla-migrate-dev \
+            --region=${{ vars.GCP_REGION }} \
+            --project=${{ vars.GCP_PROJECT_ID }} \
+            --wait
+
+      - name: deploy api
         run: |
           gcloud run deploy naqla-api-dev \
             --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-api:dev-${{ github.sha }} \
@@ -77,7 +108,7 @@ jobs:
             --role=roles/run.invoker \
             --project=${{ vars.GCP_PROJECT_ID }}
 
-      - name: deploy worker to cloud run dev
+      - name: deploy worker
         run: |
           gcloud run deploy naqla-worker-dev \
             --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-worker:dev-${{ github.sha }} \
@@ -94,7 +125,7 @@ jobs:
             --set-secrets="GEMINI_API_KEY=naqla-gemini-api-key-dev:latest" \
             --project=${{ vars.GCP_PROJECT_ID }}
 
-      - name: deploy frontend to cloud run dev
+      - name: deploy frontend
         run: |
           gcloud run deploy naqla-frontend-dev \
             --image=${{ vars.GCP_ARTIFACT_REGISTRY }}/naqla-frontend:dev-${{ github.sha }} \
@@ -107,7 +138,7 @@ jobs:
             --memory=512Mi \
             --cpu=1 \
             --timeout=30 \
-            --set-env-vars="ENVIRONMENT=dev,NEXT_PUBLIC_API_URL=https://naqla-api-dev-placeholder.run.app" \
+            --set-env-vars="ENVIRONMENT=dev,NEXT_PUBLIC_API_URL=https://naqla-api-dev-uagnx6q44q-ew.a.run.app" \
             --project=${{ vars.GCP_PROJECT_ID }}
 
       - name: smoke test
@@ -116,11 +147,7 @@ jobs:
             --region=${{ vars.GCP_REGION }} \
             --project=${{ vars.GCP_PROJECT_ID }} \
             --format="value(status.url)")
-          echo "API URL: $API_URL"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health")
-          echo "Health check status: $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "Smoke test failed"
-            exit 1
-          fi
+          echo "Health check: $STATUS at $API_URL"
+          if [ "$STATUS" != "200" ]; then exit 1; fi
           echo "Smoke test passed"
