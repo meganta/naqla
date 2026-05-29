@@ -85,7 +85,7 @@ jobs:
             --cpu=1 \
             --timeout=30 \
             --set-env-vars="ENVIRONMENT=dev,GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_REGION=${{ vars.GCP_REGION }},GCS_BUCKET_NAME=naqla-uploads-dev,CLOUD_TASKS_QUEUE=naqla-ingestion-dev,CLOUD_TASKS_LOCATION=${{ vars.GCP_REGION }},AI_PROVIDER=openai,AI_MODEL=gpt-4o-mini,CORS_ORIGINS_STR=https://naqla-frontend-dev-uagnx6q44q-ew.a.run.app,WORKER_SERVICE_URL=https://naqla-worker-dev-uagnx6q44q-ew.a.run.app" \
-            --set-secrets="JWT_SECRET=naqla-jwt-secret-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest,OPENAI_API_KEY=naqla-openai-api-key-dev:latest,DATABASE_URL=naqla-db-password-dev:latest" \
+            --set-secrets="JWT_SECRET=naqla-jwt-secret-dev:latest,GEMINI_API_KEY=naqla-gemini-api-key-dev:latest,OPENAI_API_KEY=naqla-openai-api-key-dev:latest,DATABASE_URL=naqla-db-password-dev:latest,YOUTUBE_API_KEY=naqla-youtube-api-key-dev:latest" \
             --set-cloudsql-instances=naqla-mvp:europe-west1:naqla-db-dev \
             --project=${{ vars.GCP_PROJECT_ID }}
 
