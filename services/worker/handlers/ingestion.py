@@ -1,8 +1,6 @@
 import io
 import json
 import logging
-import os
-import tempfile
 from datetime import datetime
 
 from google.cloud import storage
@@ -95,45 +93,24 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
         return None
 
 
-def download_youtube_audio(video_id: str, output_dir: str) -> str:
-    """Download audio from YouTube video as MP3. Returns file path."""
-    import yt_dlp
+def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> str:
+    """Transcribe a YouTube video using Gemini's native video understanding."""
+    import google.generativeai as genai
 
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
     url = f"https://www.youtube.com/watch?v={video_id}"
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
-        "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
-        "quiet": True,
-        "no_warnings": True,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-    mp3_path = os.path.join(output_dir, f"{video_id}.mp3")
-    if not os.path.exists(mp3_path):
-        raise ValueError(f"Audio download failed for {video_id}")
-    return mp3_path
-
-
-def transcribe_audio_with_whisper(audio_path: str, api_key: str) -> str:
-    """Transcribe audio file using OpenAI Whisper."""
-    import openai
-
-    client = openai.OpenAI(api_key=api_key)
-    with open(audio_path, "rb") as audio_file:
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="ar",
-        )
-    return transcript.text
+    prompt = (
+        "Please transcribe the spoken content of this video in full. "
+        "If the video is in Arabic, transcribe in Arabic. "
+        "If in English, transcribe in English. "
+        "Output only the transcription text, no timestamps or labels."
+    )
+    response = model.generate_content(
+        [url, prompt],
+        generation_config=genai.types.GenerationConfig(max_output_tokens=8192),
+    )
+    return response.text or ""
 
 
 def chunk_transcript_with_timestamps(
@@ -229,21 +206,19 @@ def extract_youtube_chunks_with_fallback(
     if segments:
         return chunk_transcript_with_timestamps(segments, source_type, base_meta)
 
-    # Fallback: transcribe audio with Whisper
+    # Fallback: transcribe using Gemini native video understanding
     if not api_key:
         raise ValueError(
             f"No transcript available for video {video_id} and "
-            "no OpenAI API key configured for transcription fallback."
+            "no Gemini API key configured for transcription fallback."
         )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        try:
-            audio_path = download_youtube_audio(video_id, tmpdir)
-            transcribed_text = transcribe_audio_with_whisper(audio_path, api_key)
-        except Exception as e:
-            raise ValueError(
-                f"Transcription fallback failed for video {video_id}: {e}"
-            ) from e
+    try:
+        transcribed_text = transcribe_youtube_with_gemini(video_id, api_key)
+    except Exception as e:
+        raise ValueError(
+            f"Gemini transcription failed for video {video_id}: {e}"
+        ) from e
 
     if not transcribed_text.strip():
         raise ValueError(
@@ -379,7 +354,7 @@ async def process_ingestion_job(
                     "Set original_url when creating a youtube source."
                 )
             raw_chunks = extract_youtube_chunks_with_fallback(
-                url, "youtube", api_key=settings.openai_api_key or None
+                url, "youtube", api_key=settings.gemini_api_key or None
             )
             text = None
 
