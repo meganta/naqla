@@ -75,11 +75,15 @@ export default function KnowledgePage() {
     }
   }, []);
 
+  const hasActiveSources = sources.some((s) =>
+    ["draft", "upload_pending", "uploaded", "processing"].includes(s.status)
+  );
+
   useEffect(() => {
     fetchSources();
-    const interval = setInterval(fetchSources, 5000);
+    const interval = setInterval(fetchSources, hasActiveSources ? 1000 : 5000);
     return () => clearInterval(interval);
-  }, [fetchSources]);
+  }, [fetchSources, hasActiveSources]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -272,7 +276,7 @@ export default function KnowledgePage() {
                     <span className={`text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1 ${
                       STATUS_COLORS[source.status] || "bg-gray-100 text-gray-600"
                     }`}>
-                      {["processing", "upload_pending", "uploaded"].includes(source.status) && (
+                      {["draft", "processing", "upload_pending", "uploaded"].includes(source.status) && (
                         <span className="inline-block w-2 h-2 rounded-full bg-current animate-pulse" />
                       )}
                       {STATUS_LABELS[source.status] || source.status}
