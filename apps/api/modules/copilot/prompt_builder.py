@@ -35,13 +35,38 @@ SOURCE_SCOPE_RULES = {
 }
 
 
+def _time_to_seconds(time_str: str) -> int:
+    """Convert HH:MM:SS or MM:SS to seconds."""
+    try:
+        parts = time_str.strip().split(":")
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        pass
+    return 0
+
+
 def _format_chunk(chunk: ChunkContext, index: int) -> str:
     lines = [f"[مقطع {index + 1}] من: {chunk.source_title} ({chunk.source_type})"]
     if chunk.start_time and chunk.end_time:
         lines.append(f"  التوقيت: من {chunk.start_time} إلى {chunk.end_time}")
+        if chunk.video_id:
+            start_sec = _time_to_seconds(chunk.start_time)
+            yt_url = (
+                f"https://www.youtube.com/watch?v={chunk.video_id}&t={start_sec}"
+            )
+            lines.append(f"  رابط المقطع: {yt_url}")
     elif chunk.start_time:
         lines.append(f"  التوقيت: {chunk.start_time}")
-    if chunk.source_url:
+        if chunk.video_id:
+            start_sec = _time_to_seconds(chunk.start_time)
+            yt_url = (
+                f"https://www.youtube.com/watch?v={chunk.video_id}&t={start_sec}"
+            )
+            lines.append(f"  رابط المقطع: {yt_url}")
+    elif chunk.source_url:
         lines.append(f"  الرابط: {chunk.source_url}")
     lines.append(f"  المحتوى: {chunk.content_text}")
     return "\n".join(lines)
@@ -124,6 +149,18 @@ def build_system_prompt(ctx: TenantContextPackage) -> str:
         "- الأمثلة: استخدم أمثلة من المنهج المصري حيثما أمكن\n"
         "- النزاهة: إذا كانت المعلومات غير كافية، قل ذلك واقترح مصدراً مناسباً\n"
         "- التخصص: لا تخرج عن نطاق تخصص المعلم إلا إذا كان ضرورياً للمهمة التعليمية"
+    )
+
+    # 8b. Formatting rules
+    sections.append(
+        "## تنسيق الإجابة\n"
+        "- استخدم تنسيق Markdown في إجاباتك\n"
+        "- استخدم **عناوين** و**نقاط** و**ترقيم** لتنظيم المحتوى\n"
+        "- عند الاستشهاد بمقطع فيديو، اذكر العنوان والتوقيت هكذا:\n"
+        "  📍 **[عنوان الفيديو]** — من `MM:SS` إلى `MM:SS`\n"
+        "- ضع روابط يوتيوب بهذا الشكل عند وجود video_id وstart_time:\n"
+        "  [▶️ شاهد المقطع](https://www.youtube.com/watch?v=VIDEO_ID&t=SECONDS)\n"
+        "- إذا كان المحتوى من نص أو ملف، اذكر عنوان المصدر فقط"
     )
 
     # 9. Profile completeness warning

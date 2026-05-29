@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/lib/auth";
 import { api, checkCopilotReady } from "@/lib/api-client";
 
@@ -160,7 +161,48 @@ export default function CopilotPage() {
                   ? "bg-indigo-600 text-white rounded-br-sm"
                   : "bg-gray-100 text-gray-800 rounded-bl-sm"
               }`}>
-                {msg.content}
+                {msg.role === "user" ? (
+                msg.content
+              ) : (
+                <ReactMarkdown
+                  components={{
+                    a: ({ href, children }) => (
+                      
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 underline hover:text-indigo-800"
+                      >
+                        {children}
+                      </a>
+                    ),
+                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                    ul: ({ children }) => (
+                      <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-semibold">{children}</strong>
+                    ),
+                    h1: ({ children }) => (
+                      <h1 className="text-base font-bold mb-2">{children}</h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="text-sm font-bold mb-1">{children}</h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-sm font-semibold mb-1">{children}</h3>
+                    ),
+                    code: ({ children }) => (
+                      <code className="bg-gray-200 px-1 rounded text-xs">{children}</code>
+                    ),
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              )}
               </div>
               {/* Sources used */}
               {msg.sources && msg.sources.length > 0 && (
