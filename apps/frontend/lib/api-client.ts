@@ -178,10 +178,14 @@ export async function getChannelVideos(
   }>(`/ingestion/channel/videos?${params}`, {}, token);
 }
 
-export async function importChannelVideos(token: string, video_ids: string[]) {
+export async function importChannelVideos(
+  token: string,
+  video_ids: string[],
+  titles: Record<string, string> = {}
+) {
   return request<{ imported: number; results: any[] }>(
     "/ingestion/channel/import",
-    { method: "POST", body: JSON.stringify({ video_ids }) },
+    { method: "POST", body: JSON.stringify({ video_ids, titles }) },
     token
   );
 }

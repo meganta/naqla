@@ -200,6 +200,7 @@ async def import_channel_videos(
     db: AsyncSession = Depends(get_db),
 ):
     video_ids: list[str] = payload.get("video_ids", [])
+    titles: dict[str, str] = payload.get("titles", {})
     if not video_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No video IDs provided"
@@ -212,12 +213,13 @@ async def import_channel_videos(
     created = []
     for video_id in video_ids:
         url = f"https://www.youtube.com/watch?v={video_id}"
+        title = titles.get(video_id) or f"يوتيوب: {video_id}"
         try:
             source = await create_source(
                 db,
                 tenant_id=current_user.tenant_id,
                 teacher_id=current_user.id,
-                title=f"يوتيوب: {video_id}",
+                title=title,
                 source_type="youtube",
                 original_url=url,
             )

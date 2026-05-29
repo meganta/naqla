@@ -95,7 +95,9 @@ export function ChannelImportModal({ token, onClose, onImported }: Props) {
     setImporting(true);
     setImportResult(null);
     try {
-      const result = await importChannelVideos(token, Array.from(selected));
+      const titlesMap: Record<string, string> = {};
+    videos.forEach((v) => { if (selected.has(v.video_id)) titlesMap[v.video_id] = v.title; });
+    const result = await importChannelVideos(token, Array.from(selected), titlesMap);
       setImportResult(`تم استيراد ${result.imported} فيديو بنجاح`);
       onImported();
       setTimeout(onClose, 2000);

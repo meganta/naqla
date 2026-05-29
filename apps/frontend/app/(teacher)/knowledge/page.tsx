@@ -19,7 +19,6 @@ const SOURCE_TYPES = [
   { value: "audio", label: "صوت", icon: "🎵", accept: "audio/*" },
   { value: "video", label: "فيديو", icon: "🎥", accept: "video/*" },
   { value: "youtube", label: "يوتيوب", icon: "🎬", accept: null },
-  { value: "youtube_channel", label: "قناة", icon: "📺", accept: null },
 ];
 
 const FILE_TYPES = ["pdf", "docx", "pptx", "audio", "video"];
@@ -168,14 +167,6 @@ export default function KnowledgePage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">مصادر المعرفة</h1>
           <button
-            onClick={() => setShowChannelModal(true)}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700
-              px-4 py-2 rounded-lg hover:bg-gray-50 text-sm font-medium ml-2"
-          >
-            <span>📺</span>
-            <span>استيراد من القناة</span>
-          </button>
-          <button
             onClick={() => { setShowForm(!showForm); setUploadProgress(""); }}
             className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg
               hover:bg-indigo-700 text-sm font-medium"
@@ -217,6 +208,14 @@ export default function KnowledgePage() {
                     </button>
                   ))}
                 </div>
+              <button
+                type="button"
+                onClick={() => setShowChannelModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border bg-white text-gray-700 border-gray-300 hover:border-indigo-400 transition-colors"
+              >
+                <span>📺</span>
+                <span>استيراد من القناة</span>
+              </button>
               </div>
 
               {/* File picker */}
