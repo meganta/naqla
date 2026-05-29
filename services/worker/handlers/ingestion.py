@@ -107,7 +107,7 @@ def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> str:
         "Output only the transcription text, no timestamps or labels."
     )
     response = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
+        model="gemini-2.5-flash",
         contents=types.Content(
             parts=[
                 types.Part(text=url),
