@@ -166,27 +166,40 @@ async def get_latest_job(
 async def delete_source(
     db: AsyncSession, source_id: str, tenant_id: str
 ) -> bool:
-    """Hard delete a source and its knowledge chunks. Returns True if deleted."""
+    """Hard delete a source, its jobs, and its chunks. Returns True if deleted."""
     from sqlalchemy import delete
-    
-    # Delete knowledge chunks first (cascade)
+
+    # Verify source belongs to tenant first
+    source = await get_source(db, source_id, tenant_id)
+    if not source:
+        return False
+
+    # Delete chunks first
     await db.execute(
         delete(KnowledgeChunk).where(
             KnowledgeChunk.source_id == source_id,
             KnowledgeChunk.tenant_id == tenant_id,
         )
     )
-    
-    # Delete source
-    result = await db.execute(
+
+    # Delete jobs second
+    await db.execute(
+        delete(IngestionJob).where(
+            IngestionJob.source_id == source_id,
+            IngestionJob.tenant_id == tenant_id,
+        )
+    )
+
+    # Delete source last
+    await db.execute(
         delete(KnowledgeSource).where(
             KnowledgeSource.id == source_id,
             KnowledgeSource.tenant_id == tenant_id,
         )
     )
-    
+
     await db.flush()
-    return result.rowcount > 0
+    return True
 
 
 async def update_source_title(
