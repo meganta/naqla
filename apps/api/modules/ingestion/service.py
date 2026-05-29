@@ -49,7 +49,6 @@ def generate_signed_upload_url(
         version="v4",
         expiration=timedelta(minutes=15),
         method="PUT",
-        content_type="application/octet-stream",
         credentials=signing_credentials,
     )
     return upload_url, file_path

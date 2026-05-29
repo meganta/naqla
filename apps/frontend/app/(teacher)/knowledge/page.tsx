@@ -133,7 +133,6 @@ export default function KnowledgePage() {
         setUploadProgress("جاري رفع الملف...");
         const uploadRes = await fetch(source.upload_url, {
           method: "PUT",
-          headers: { "Content-Type": "application/octet-stream" },
           body: selectedFile,
         });
         if (!uploadRes.ok) throw new Error("فشل رفع الملف إلى التخزين السحابي");
