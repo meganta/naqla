@@ -98,7 +98,7 @@ def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> str:
     import google.generativeai as genai
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash")
     url = f"https://www.youtube.com/watch?v={video_id}"
     prompt = (
         "Please transcribe the spoken content of this video in full. "
