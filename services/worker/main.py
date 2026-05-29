@@ -48,4 +48,10 @@ async def handle_ingestion_task(request: Request):
             return {"status": "done", "chunks_created": count}
         except Exception as e:
             await db.rollback()
+            import traceback
+            import logging
+            logging.getLogger("worker").error(
+                "Unhandled error in ingestion task: %s\n%s",
+                str(e), traceback.format_exc()
+            )
             raise HTTPException(status_code=500, detail=str(e)) from e
