@@ -6,6 +6,7 @@ Create Date: 2026-05-29
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import UUID
 
 revision = '005'
 down_revision = '004'
@@ -16,7 +17,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         'knowledge_sources',
-        sa.Column('parent_source_id', sa.String(36), nullable=True)
+        sa.Column('parent_source_id', UUID(as_uuid=False), nullable=True)
     )
     op.create_foreign_key(
         'fk_knowledge_sources_parent_source_id',
