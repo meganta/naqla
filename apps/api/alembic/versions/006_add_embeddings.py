@@ -31,7 +31,8 @@ def upgrade() -> None:
     op.create_index(
         'ix_knowledge_chunks_source_id',
         'knowledge_chunks',
-        ['source_id']
+        ['source_id'],
+        if_not_exists=True,
     )
 
 
