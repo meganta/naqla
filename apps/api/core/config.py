@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://naqla:placeholder@localhost/naqla_dev"
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 15
+    jwt_access_token_expire_minutes: int = 10080  # 7 days
     jwt_refresh_token_expire_days: int = 7
     gcp_project_id: str = "naqla-mvp"
     gcp_region: str = "europe-west1"

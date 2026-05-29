@@ -5,11 +5,13 @@ import { AuthContext, AuthUser, getStoredToken, getStoredUser, setStoredToken, s
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const t = getStoredToken();
     const u = getStoredUser();
     if (t && u) { setToken(t); setUser(u); }
+    setLoading(false);
   }, []);
 
   function login(t: string, u: AuthUser) {
@@ -22,6 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredToken();
   }
 
+  if (loading) return null;
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>
       {children}
