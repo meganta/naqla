@@ -107,6 +107,7 @@ async def confirm_upload(
     if not source:
         raise ValueError("Source not found")
 
+    source.status = "uploaded"
     source.updated_at = datetime.utcnow()
     await db.flush()
     return source
