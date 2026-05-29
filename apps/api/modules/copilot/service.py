@@ -1,6 +1,7 @@
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from modules.ingestion.models import KnowledgeChunk
 from providers.ai_provider.base import AIMessage, AIProvider, SourceScope
 
@@ -12,6 +13,22 @@ ARABIC_SUBJECT_SCOPE = (
 )
 
 
+async def embed_query(query: str) -> list[float] | None:
+    """Generate embedding for a query using OpenAI."""
+    if not settings.openai_api_key:
+        return None
+    try:
+        import openai
+        client = openai.OpenAI(api_key=settings.openai_api_key)
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=[query],
+        )
+        return response.data[0].embedding
+    except Exception:
+        return None
+
+
 async def retrieve_context(
     db: AsyncSession,
     tenant_id: str,
@@ -21,6 +38,40 @@ async def retrieve_context(
 ) -> list[KnowledgeChunk]:
     if scope == SourceScope.OFFICIAL_CURRICULUM:
         return []
+
+    # Try vector similarity search first
+    query_embedding = await embed_query(query)
+    if query_embedding is not None:
+        try:
+            embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+            result = await db.execute(
+                text("""
+                    SELECT id FROM knowledge_chunks
+                    WHERE tenant_id = :tenant_id
+                    AND embedding IS NOT NULL
+                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                    LIMIT :limit
+                """),
+                {
+                    "tenant_id": tenant_id,
+                    "embedding": embedding_str,
+                    "limit": limit,
+                }
+            )
+            ids = [row[0] for row in result.fetchall()]
+            if ids:
+                chunks_result = await db.execute(
+                    select(KnowledgeChunk).where(KnowledgeChunk.id.in_(ids))
+                )
+                chunks = list(chunks_result.scalars().all())
+                # Sort by original order
+                id_order = {id_: i for i, id_ in enumerate(ids)}
+                chunks.sort(key=lambda c: id_order.get(c.id, 999))
+                return chunks
+        except Exception:
+            pass
+
+    # Fallback to recency if no embeddings available
     stmt = (
         select(KnowledgeChunk)
         .where(KnowledgeChunk.tenant_id == tenant_id)

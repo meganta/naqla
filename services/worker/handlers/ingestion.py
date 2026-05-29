@@ -9,6 +9,17 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 
+def generate_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
+    """Generate embeddings for a list of texts using OpenAI."""
+    import openai
+    client = openai.OpenAI(api_key=api_key)
+    response = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=texts,
+    )
+    return [item.embedding for item in response.data]
+
+
 def download_file(bucket_name: str, file_path: str) -> bytes:
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -477,7 +488,21 @@ async def process_ingestion_job(
     if text is not None:
         raw_chunks = chunk_arabic_text(text, source_type_tag=source.source_type)
 
-    for raw in raw_chunks:
+    # Generate embeddings if OpenAI key is available
+    embeddings: list[list[float]] = []
+    if raw_chunks and settings.openai_api_key:
+        try:
+            texts = [r["content_text"] for r in raw_chunks]
+            # Process in batches of 100 to avoid API limits
+            for i in range(0, len(texts), 100):
+                batch = texts[i:i + 100]
+                batch_embeddings = generate_embeddings(batch, settings.openai_api_key)
+                embeddings.extend(batch_embeddings)
+        except Exception as e:
+            logger.warning("Embedding generation failed: %s", e)
+            embeddings = []
+
+    for i, raw in enumerate(raw_chunks):
         chunk = KnowledgeChunk(
             tenant_id=tenant_id,
             source_id=source_id,
@@ -486,6 +511,7 @@ async def process_ingestion_job(
             char_count=raw["char_count"],
             source_type_tag=raw["source_type_tag"],
             extra_meta=raw.get("extra_meta"),
+            embedding=embeddings[i] if i < len(embeddings) else None,
             created_at=datetime.utcnow(),
         )
         db.add(chunk)

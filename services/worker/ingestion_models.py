@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -66,4 +67,5 @@ class KnowledgeChunk(Base):
     subject_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     grade_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
