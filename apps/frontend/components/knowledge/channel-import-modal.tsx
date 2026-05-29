@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { getChannelVideos, importChannelVideos } from "@/lib/api-client";
 
 interface Video {
@@ -214,10 +215,12 @@ export function ChannelImportModal({ token, onClose, onImported }: Props) {
                         className="w-4 h-4 accent-indigo-600 shrink-0"
                       />
                       {video.thumbnail && (
-                        <img
+                        <Image
                           src={video.thumbnail}
                           alt={video.title}
-                          className="w-20 h-12 object-cover rounded-lg shrink-0"
+                          width={80}
+                          height={48}
+                          className="object-cover rounded-lg shrink-0"
                         />
                       )}
                       <div className="min-w-0 flex-1">

@@ -89,7 +89,7 @@ export default function KnowledgePage() {
     } catch (e) {
       console.error("Failed to fetch sources:", e);
     }
-  }, []);
+  }, [token]);;
 
   const hasActiveSources = sources.some((s) =>
     ["draft", "upload_pending", "uploaded", "processing"].includes(s.status)
