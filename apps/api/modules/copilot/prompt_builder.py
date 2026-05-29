@@ -130,7 +130,13 @@ def build_system_prompt(ctx: TenantContextPackage) -> str:
         chunk_texts = "\n\n".join(
             _format_chunk(c, i) for i, c in enumerate(ctx.retrieved_chunks)
         )
-        sections.append(f"## المحتوى المسترجع من قاعدة معرفة المعلم\n{chunk_texts}")
+        sections.append(
+            "## المحتوى المسترجع من قاعدة معرفة المعلم\n"
+            "**مهم جداً: يجب أن تبني إجابتك على هذه المقاطع فقط. "
+            "اذكر عنوان المصدر والتوقيت لكل معلومة تستخدمها. "
+            "إذا كان المقطع من فيديو وله رابط، أدرج الرابط في إجابتك.**\n\n"
+            f"{chunk_texts}"
+        )
     else:
         if ctx.source_scope == "teacher_kb":
             sections.append(
@@ -179,4 +185,15 @@ def build_user_prompt(user_message: str, task_type: str) -> str:
     instruction = TASK_TYPE_INSTRUCTIONS.get(
         task_type, "أجب على طلب المعلم بدقة واستند إلى المصادر المتاحة."
     )
-    return f"[نوع المهمة: {task_type}]\n{instruction}\n\n{user_message}"
+    citation_reminder = (
+        "تذكير: استند إلى المقاطع المسترجعة في إجابتك. "
+        "اذكر عنوان كل مصدر وتوقيته. "
+        "إذا كان المصدر فيديو يوتيوب، أدرج رابط المقطع بهذا الشكل: "
+        "[▶️ شاهد المقطع](https://www.youtube.com/watch?v=VIDEO_ID&t=SECONDS)"
+    )
+    return (
+        f"[نوع المهمة: {task_type}]\n"
+        f"{instruction}\n\n"
+        f"{citation_reminder}\n\n"
+        f"سؤال المعلم: {user_message}"
+    )
