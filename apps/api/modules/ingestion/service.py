@@ -106,7 +106,7 @@ async def confirm_upload(
     source = result.scalar_one_or_none()
     if not source:
         raise ValueError("Source not found")
-    source.status = "uploaded"
+
     source.updated_at = datetime.utcnow()
     await db.flush()
     return source
@@ -172,6 +172,17 @@ async def delete_source(
     source = await get_source(db, source_id, tenant_id)
     if not source:
         return False
+
+    # Delete GCS file if present
+    if source.file_path:
+        try:
+            gcs_client = storage.Client()
+            bucket = gcs_client.bucket(settings.gcs_bucket_name)
+            blob = bucket.blob(source.file_path)
+            blob.delete()
+        except Exception:
+            pass  # Do not fail the delete if GCS cleanup fails
+
 
     # Delete chunks first
     await db.execute(

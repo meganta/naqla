@@ -243,6 +243,34 @@ def extract_youtube_chunks_with_fallback(
     return chunks
 
 
+def transcribe_file_with_gemini(file_bytes: bytes, source_type: str, api_key: str) -> str:
+    """Transcribe an audio or video file using Gemini."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    mime_type = "audio/mpeg" if source_type == "audio" else "video/mp4"
+    prompt = (
+        "Please transcribe the spoken content of this file in full. "
+        "If the content is in Arabic, transcribe in Arabic. "
+        "If in English, transcribe in English. "
+        "Output only the transcription text, no timestamps or labels."
+    )
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=types.Content(
+            parts=[
+                types.Part(
+                    inline_data=types.Blob(mime_type=mime_type, data=file_bytes)
+                ),
+                types.Part(text=prompt),
+            ]
+        ),
+        config=types.GenerateContentConfig(max_output_tokens=8192),
+    )
+    return response.text or ""
+
+
 def get_channel_video_ids(
     channel_identifier: str, api_key: str, max_videos: int = 25
 ) -> list[str]:
@@ -401,10 +429,31 @@ async def process_ingestion_job(
             text = None
 
         elif source.source_type in {"audio", "video"}:
-            raise ValueError(
-                f"Source type '{source.source_type}' requires transcription. "
-                "Audio/video transcription is not yet implemented."
-            )
+            if not source.file_path:
+                raise ValueError(
+                    f"No file uploaded for {source.source_type} source. "
+                    "Upload the file first and call confirm-upload."
+                )
+            if not settings.gemini_api_key:
+                raise ValueError(
+                    "Gemini API key is not configured. "
+                    "Set GEMINI_API_KEY in worker environment."
+                )
+            file_bytes = download_file(bucket_name, source.file_path)
+            try:
+                text = transcribe_file_with_gemini(
+                    file_bytes, source.source_type, settings.gemini_api_key
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Gemini transcription failed for {source.source_type} "
+                    f"source {source_id}: {e}"
+                ) from e
+            if not text.strip():
+                raise ValueError(
+                    f"Transcription produced no text for {source.source_type} "
+                    f"source {source_id}."
+                )
 
         elif source.file_path:
             file_bytes = download_file(bucket_name, source.file_path)
