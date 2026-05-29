@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.security import get_current_user
+from modules.ingestion.channel_service import get_channel_videos
 from modules.ingestion.models import (
     FILE_SOURCE_TYPES,
     TEXT_SOURCE_TYPES,
@@ -163,6 +164,68 @@ async def edit_source_title(
             status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
         )
     return source
+
+
+@router.get("/channel/videos")
+async def list_channel_videos(
+    page_token: str | None = None,
+    per_page: int = 10,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from modules.settings.service import get_tenant_settings
+    settings = await get_tenant_settings(db, current_user.tenant_id)
+    if not settings.youtube_channel_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="YouTube channel not configured. Set it in your account settings.",
+        )
+    try:
+        result = await get_channel_videos(
+            db=db,
+            tenant_id=current_user.tenant_id,
+            channel_identifier=settings.youtube_channel_id,
+            page_token=page_token,
+            per_page=min(per_page, 50),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+
+@router.post("/channel/import")
+async def import_channel_videos(
+    payload: dict,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    video_ids: list[str] = payload.get("video_ids", [])
+    if not video_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No video IDs provided"
+        )
+    if len(video_ids) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 50 videos per import batch",
+        )
+    created = []
+    for video_id in video_ids:
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        try:
+            source = await create_source(
+                db,
+                tenant_id=current_user.tenant_id,
+                teacher_id=current_user.id,
+                title=f"يوتيوب: {video_id}",
+                source_type="youtube",
+                original_url=url,
+            )
+            job = await enqueue_ingestion_job(db, source.id, current_user.tenant_id)
+            created.append({"source_id": source.id, "job_id": job.id, "url": url})
+        except Exception as e:
+            created.append({"url": url, "error": str(e)})
+    return {"imported": len([c for c in created if "error" not in c]), "results": created}
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)

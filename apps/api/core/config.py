@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    youtube_api_key: str = ""
     worker_service_url: str = "http://localhost:8001"
     cors_origins_str: str = "http://localhost:3000"
     cors_origins: list[str] = []

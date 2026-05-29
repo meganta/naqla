@@ -42,12 +42,23 @@ class KnowledgeSource(Base):
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="draft")
+    parent_source_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("knowledge_sources.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     jobs: Mapped[list["IngestionJob"]] = relationship("IngestionJob", back_populates="source")
+    child_sources: Mapped[list["KnowledgeSource"]] = relationship(
+        "KnowledgeSource", foreign_keys="KnowledgeSource.parent_source_id",
+        back_populates="parent_source",
+    )
+    parent_source: Mapped["KnowledgeSource | None"] = relationship(
+        "KnowledgeSource", foreign_keys="KnowledgeSource.parent_source_id",
+        back_populates="child_sources", remote_side="KnowledgeSource.id",
+    )
 
 
 class IngestionJob(Base):
@@ -90,3 +101,20 @@ class KnowledgeChunk(Base):
     grade_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TenantSettings(Base):
+    __tablename__ = "tenant_settings"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), nullable=False, unique=True
+    )
+    youtube_channel_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    youtube_channel_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

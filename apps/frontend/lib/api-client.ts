@@ -135,3 +135,53 @@ export const getLatestJob = api.ingestion.getLatestJob;
 export const getJob = api.ingestion.getJob;
 export const deleteSource = api.ingestion.deleteSource;
 export const updateSource = api.ingestion.updateSource;
+
+export async function getSettings(token: string) {
+  return request<{ youtube_channel_url: string | null; youtube_channel_id: string | null }>(
+    "/settings",
+    {},
+    token
+  );
+}
+
+export async function updateSettings(
+  token: string,
+  youtube_channel_url: string | null
+) {
+  return request<{ youtube_channel_url: string | null; youtube_channel_id: string | null }>(
+    "/settings",
+    { method: "PUT", body: JSON.stringify({ youtube_channel_url }) },
+    token
+  );
+}
+
+export async function getChannelVideos(
+  token: string,
+  page_token?: string,
+  per_page = 10
+) {
+  const params = new URLSearchParams({ per_page: String(per_page) });
+  if (page_token) params.set("page_token", page_token);
+  return request<{
+    videos: {
+      video_id: string;
+      url: string;
+      title: string;
+      description: string;
+      thumbnail: string | null;
+      published_at: string;
+      status: string | null;
+    }[];
+    next_page_token: string | null;
+    prev_page_token: string | null;
+    total_results: number;
+  }>(`/ingestion/channel/videos?${params}`, {}, token);
+}
+
+export async function importChannelVideos(token: string, video_ids: string[]) {
+  return request<{ imported: number; results: any[] }>(
+    "/ingestion/channel/import",
+    { method: "POST", body: JSON.stringify({ video_ids }) },
+    token
+  );
+}

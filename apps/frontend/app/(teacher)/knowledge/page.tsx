@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { ChannelImportModal } from "@/components/knowledge/channel-import-modal";
 import { useAuth } from "@/lib/auth";
 import {
   createSource,
@@ -68,6 +69,7 @@ export default function KnowledgePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [originalUrl, setOriginalUrl] = useState("");
   const [uploadProgress, setUploadProgress] = useState<string>("");
+  const [showChannelModal, setShowChannelModal] = useState(false);
 
   const handleDelete = async (sourceId: string) => {
     if (!window.confirm("هل تريد حذف هذا المصدر؟ لا يمكن التراجع عن هذا الإجراء.")) return;
@@ -165,6 +167,14 @@ export default function KnowledgePage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">مصادر المعرفة</h1>
+          <button
+            onClick={() => setShowChannelModal(true)}
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700
+              px-4 py-2 rounded-lg hover:bg-gray-50 text-sm font-medium ml-2"
+          >
+            <span>📺</span>
+            <span>استيراد من القناة</span>
+          </button>
           <button
             onClick={() => { setShowForm(!showForm); setUploadProgress(""); }}
             className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg
@@ -339,6 +349,14 @@ export default function KnowledgePage() {
         </div>
 
       </div>
+
+      {showChannelModal && token && (
+        <ChannelImportModal
+          token={token}
+          onClose={() => setShowChannelModal(false)}
+          onImported={fetchSources}
+        />
+      )}
     </div>
   );
 }

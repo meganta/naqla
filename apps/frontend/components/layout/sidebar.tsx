@@ -44,10 +44,17 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="p-4 border-t border-gray-100">
-        <div className="px-4 py-2 mb-2">
-          <p className="text-sm font-medium text-gray-700 truncate">{user?.full_name}</p>
-          <p className="text-xs text-gray-400 truncate">{user?.email}</p>
-        </div>
+        <Link
+          href="/settings"
+          className={`flex items-center gap-3 px-4 py-2 rounded-lg text-sm transition mb-1 ${
+            pathname === "/settings"
+              ? "bg-indigo-50 text-indigo-700 font-medium"
+              : "text-gray-600 hover:bg-gray-50"
+          }`}
+        >
+          <span>⚙️</span>
+          <span>{user?.full_name}</span>
+        </Link>
         <button
           onClick={handleLogout}
           className="w-full text-right px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition"
