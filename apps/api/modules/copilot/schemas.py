@@ -11,8 +11,16 @@ class ChatMessage(BaseModel):
 class CopilotRequest(BaseModel):
     messages: list[ChatMessage]
     scope: SourceScope = SourceScope.TEACHER_KB
-    max_tokens: int = 1000
+    task_type: str = "answer_question"
+    max_tokens: int = 2000
     temperature: float = 0.7
+
+
+class SourceUsed(BaseModel):
+    source_id: str
+    source_title: str
+    source_type: str
+    chunk_count: int
 
 
 class CopilotResponse(BaseModel):
@@ -22,3 +30,7 @@ class CopilotResponse(BaseModel):
     provider: str
     source_scope: str
     context_chunks_used: int
+    insufficient_context: bool = False
+    is_profile_complete: bool = True
+    missing_profile_fields: list[str] = []
+    sources_used: list[SourceUsed] = []

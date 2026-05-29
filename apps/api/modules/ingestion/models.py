@@ -116,6 +116,22 @@ class TenantSettings(Base):
     )
     youtube_channel_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     youtube_channel_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Academic profile
+    subject: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    grade_level: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    curriculum_country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    curriculum_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    school_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    academic_year: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    teaching_language: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    student_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Copilot behavior
+    copilot_tone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    copilot_response_language: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Methodology
+    methodology_template: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    teaching_style: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    explanation_depth: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

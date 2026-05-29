@@ -1,11 +1,14 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { api } from "@/lib/api-client";
+import { api, checkCopilotReady } from "@/lib/api-client";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  sources?: { source_title: string; source_type: string; chunk_count: number }[];
+  insufficient_context?: boolean;
 }
 
 const SCOPES = [
@@ -15,66 +18,167 @@ const SCOPES = [
   { value: "all", label: "جميع المصادر" },
 ];
 
+const TASK_TYPES = [
+  { value: "answer_question", label: "إجابة سؤال" },
+  { value: "explain_concept", label: "شرح مفهوم" },
+  { value: "generate_examples", label: "أمثلة تطبيقية" },
+  { value: "generate_exam_questions", label: "أسئلة امتحانية" },
+  { value: "summarize_source", label: "تلخيص مصدر" },
+  { value: "create_revision_notes", label: "ملاحظات مراجعة" },
+  { value: "rewrite_explanation", label: "إعادة صياغة" },
+  { value: "improve_teacher_content", label: "تحسين محتوى" },
+];
+
 export default function CopilotPage() {
   const { token } = useAuth();
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [scope, setScope] = useState("teacher_kb");
+  const [taskType, setTaskType] = useState("answer_question");
   const [loading, setLoading] = useState(false);
+  const [profileReady, setProfileReady] = useState<boolean | null>(null);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (!token) return;
+    checkCopilotReady(token)
+      .then((r) => {
+        setProfileReady(r.ready);
+        setMissingFields(r.missing_fields);
+      })
+      .catch(() => setProfileReady(true));
+  }, [token]);
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || !token) return;
     const userMsg: Message = { role: "user", content: input };
-    setMessages(prev => [...prev, userMsg]);
-    setInput(""); setLoading(true);
+    setMessages((prev) => [...prev, userMsg]);
+    setInput("");
+    setLoading(true);
     try {
-      const res = await api.copilot.chat({
-        messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
-        scope,
-      }, token);
-      setMessages(prev => [...prev, { role: "assistant", content: res.text }]);
+      const res = await api.copilot.chat(
+        {
+          messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
+          scope,
+          task_type: taskType,
+        },
+        token
+      );
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: res.text,
+          sources: res.sources_used,
+          insufficient_context: res.insufficient_context,
+        },
+      ]);
     } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "حدث خطأ. يرجى المحاولة مرة أخرى." }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "حدث خطأ. يرجى المحاولة مرة أخرى." },
+      ]);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-gray-800">المساعد الذكي</h2>
-        <select
-          value={scope} onChange={e => setScope(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        >
-          {SCOPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+    <div dir="rtl" className="flex flex-col h-[calc(100vh-8rem)]">
+
+      {/* Profile incomplete warning */}
+      {profileReady === false && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4
+          flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-yellow-800">
+              ⚠️ ملفك الشخصي غير مكتمل — المساعد يعمل بإعدادات افتراضية
+            </p>
+            <p className="text-xs text-yellow-600 mt-0.5">
+              أكمل إعداد: {missingFields.join("، ")} للحصول على إجابات أدق
+            </p>
+          </div>
+          <button
+            onClick={() => router.push("/settings")}
+            className="text-xs bg-yellow-600 text-white px-3 py-1.5 rounded-lg hover:bg-yellow-700"
+          >
+            إكمال الإعداد
+          </button>
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <h2 className="text-2xl font-bold text-gray-800 shrink-0">المساعد الذكي</h2>
+        <div className="flex gap-2">
+          <select
+            value={taskType}
+            onChange={(e) => setTaskType(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm
+              focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          >
+            {TASK_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm
+              focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          >
+            {SCOPES.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      {/* Messages */}
       <div className="flex-1 bg-white rounded-xl border border-gray-200 overflow-y-auto p-6 space-y-4">
         {messages.length === 0 && (
           <div className="h-full flex items-center justify-center text-gray-400">
             <div className="text-center">
               <div className="text-5xl mb-4">🤖</div>
               <p>ابدأ محادثة مع المساعد الذكي</p>
-              <p className="text-sm mt-1">اسأل عن أي موضوع في اللغة العربية</p>
+              <p className="text-sm mt-1">اختر نوع المهمة والمصدر ثم اكتب سؤالك</p>
             </div>
           </div>
         )}
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-start" : "justify-end"}`}>
-            <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-              msg.role === "user"
-                ? "bg-indigo-600 text-white rounded-br-sm"
-                : "bg-gray-100 text-gray-800 rounded-bl-sm"
-            }`}>
-              {msg.content}
+            <div className="max-w-[80%]">
+              <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                msg.role === "user"
+                  ? "bg-indigo-600 text-white rounded-br-sm"
+                  : "bg-gray-100 text-gray-800 rounded-bl-sm"
+              }`}>
+                {msg.content}
+              </div>
+              {/* Sources used */}
+              {msg.sources && msg.sources.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1 justify-end">
+                  {msg.sources.map((s, j) => (
+                    <span key={j}
+                      className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">
+                      📚 {s.source_title} ({s.chunk_count} مقطع)
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Insufficient context */}
+              {msg.insufficient_context && (
+                <p className="text-xs text-orange-500 mt-1 text-left">
+                  ⚠️ لم يُعثر على محتوى كافٍ في قاعدة المعرفة
+                </p>
+              )}
             </div>
           </div>
         ))}
@@ -87,16 +191,22 @@ export default function CopilotPage() {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Input */}
       <form onSubmit={handleSend} className="mt-4 flex gap-3">
         <input
-          value={input} onChange={e => setInput(e.target.value)}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
           placeholder="اكتب سؤالك هنا..."
-          className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-right focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-right
+            focus:outline-none focus:ring-2 focus:ring-indigo-400"
           disabled={loading}
         />
         <button
-          type="submit" disabled={loading || !input.trim()}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl transition disabled:opacity-50"
+          type="submit"
+          disabled={loading || !input.trim()}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl
+            transition disabled:opacity-50"
         >
           إرسال
         </button>

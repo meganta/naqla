@@ -111,6 +111,7 @@ export const api = {
       data: {
         messages: Array<{ role: string; content: string }>;
         scope: string;
+        task_type?: string;
       },
       token: string
     ) =>
@@ -121,6 +122,10 @@ export const api = {
         provider: string;
         source_scope: string;
         context_chunks_used: number;
+        insufficient_context: boolean;
+        is_profile_complete: boolean;
+        missing_profile_fields: string[];
+        sources_used: { source_id: string; source_title: string; source_type: string; chunk_count: number }[];
       }>("/copilot/chat", { method: "POST", body: JSON.stringify(data) }, token),
   },
 };
@@ -146,11 +151,19 @@ export async function getSettings(token: string) {
 
 export async function updateSettings(
   token: string,
-  youtube_channel_url: string | null
+  payload: Record<string, string | null>
 ) {
-  return request<{ youtube_channel_url: string | null; youtube_channel_id: string | null }>(
+  return request<Record<string, string | null>>(
     "/settings",
-    { method: "PUT", body: JSON.stringify({ youtube_channel_url }) },
+    { method: "PUT", body: JSON.stringify(payload) },
+    token
+  );
+}
+
+export async function checkCopilotReady(token: string) {
+  return request<{ ready: boolean; missing_fields: string[] }>(
+    "/settings/copilot-ready",
+    {},
     token
   );
 }
