@@ -1,11 +1,14 @@
 import io
 import json
+import logging
 import os
 import tempfile
 from datetime import datetime
 
 from google.cloud import storage
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 
 def download_file(bucket_name: str, file_path: str) -> bytes:
@@ -58,6 +61,7 @@ def extract_video_id(url: str) -> str | None:
     import re
     patterns = [
         r"(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})",
+        r"shorts/([A-Za-z0-9_-]{11})",
     ]
     for p in patterns:
         m = re.search(p, url)
@@ -432,6 +436,7 @@ async def process_ingestion_job(
             )
 
     except ValueError as e:
+        logger.exception("Ingestion failed job=%s source=%s: %s", job_id, source_id, e)
         job.status = "failed"
         job.error_message = str(e)
         source.status = "failed"
