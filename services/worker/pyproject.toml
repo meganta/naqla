@@ -18,7 +18,7 @@ dependencies = [
     "youtube-transcript-api>=0.6.2",
     "yt-dlp>=2024.5.27",
     "openai>=1.30.0",
-    "google-generativeai>=0.8.6",
+    "google-genai>=0.8.6",
 ]
 
 [dependency-groups]

@@ -95,10 +95,10 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
 
 def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> str:
     """Transcribe a YouTube video using Gemini's native video understanding."""
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    client = genai.Client(api_key=api_key)
     url = f"https://www.youtube.com/watch?v={video_id}"
     prompt = (
         "Please transcribe the spoken content of this video in full. "
@@ -106,9 +106,15 @@ def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> str:
         "If in English, transcribe in English. "
         "Output only the transcription text, no timestamps or labels."
     )
-    response = model.generate_content(
-        [url, prompt],
-        generation_config=genai.types.GenerationConfig(max_output_tokens=8192),
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        contents=types.Content(
+            parts=[
+                types.Part(text=url),
+                types.Part(text=prompt),
+            ]
+        ),
+        config=types.GenerateContentConfig(max_output_tokens=8192),
     )
     return response.text or ""
 
