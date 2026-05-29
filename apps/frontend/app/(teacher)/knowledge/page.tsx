@@ -269,9 +269,12 @@ export default function KnowledgePage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1 ${
                       STATUS_COLORS[source.status] || "bg-gray-100 text-gray-600"
                     }`}>
+                      {["processing", "upload_pending", "uploaded"].includes(source.status) && (
+                        <span className="inline-block w-2 h-2 rounded-full bg-current animate-pulse" />
+                      )}
                       {STATUS_LABELS[source.status] || source.status}
                     </span>
                     <span className="text-xs text-gray-400">
