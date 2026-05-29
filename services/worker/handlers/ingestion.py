@@ -104,18 +104,24 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
         return None
 
 
-def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> str:
-    """Transcribe a YouTube video using Gemini's native video understanding."""
+def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> list[dict]:
+    """
+    Transcribe a YouTube video using Gemini with timestamps.
+    Returns list of segments: [{text, start, end}, ...]
+    """
     from google import genai
     from google.genai import types
+    import re
 
     client = genai.Client(api_key=api_key)
     url = f"https://www.youtube.com/watch?v={video_id}"
     prompt = (
-        "Please transcribe the spoken content of this video in full. "
+        "Transcribe the spoken content of this video with timestamps. "
+        "Format each segment exactly like this:\n"
+        "[HH:MM:SS --> HH:MM:SS] text here\n"
         "If the video is in Arabic, transcribe in Arabic. "
         "If in English, transcribe in English. "
-        "Output only the transcription text, no timestamps or labels."
+        "Output only the timestamped segments, nothing else."
     )
     response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -127,7 +133,24 @@ def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> str:
         ),
         config=types.GenerateContentConfig(max_output_tokens=8192),
     )
-    return response.text or ""
+    raw = response.text or ""
+
+    # Parse timestamped segments
+    pattern = re.compile(
+        r"\[(\d{2}:\d{2}:\d{2})\s*-->\s*(\d{2}:\d{2}:\d{2})\]\s*(.+?)(?=\[|\Z)",
+        re.DOTALL,
+    )
+    segments = []
+    for match in pattern.finditer(raw):
+        start, end, text = match.group(1), match.group(2), match.group(3).strip()
+        if text:
+            segments.append({"text": text, "start": start, "end": end})
+
+    # Fallback: if no timestamps parsed, return as single segment
+    if not segments and raw.strip():
+        segments = [{"text": raw.strip(), "start": "00:00:00", "end": "00:00:00"}]
+
+    return segments
 
 
 def chunk_transcript_with_timestamps(
@@ -231,27 +254,20 @@ def extract_youtube_chunks_with_fallback(
         )
 
     try:
-        transcribed_text = transcribe_youtube_with_gemini(video_id, api_key)
+        segments = transcribe_youtube_with_gemini(video_id, api_key)
     except Exception as e:
         raise ValueError(
             f"Gemini transcription failed for video {video_id}: {e}"
         ) from e
 
-    if not transcribed_text.strip():
+    if not segments:
         raise ValueError(
-            f"Transcription produced no text for video {video_id}."
+            f"Transcription produced no content for video {video_id}."
         )
 
-    # Chunk the transcribed text (no timestamps available from Whisper)
-    from arabic_processing.chunker import chunk_arabic_text
-    chunks = chunk_arabic_text(transcribed_text, source_type_tag=source_type)
-    for chunk in chunks:
-        chunk["extra_meta"] = json.dumps({
-            **base_meta,
-            "transcribed": True,
-            "transcription_provider": "openai_whisper",
-        })
-    return chunks
+    # Add transcription metadata to base_meta
+    gemini_meta = {**base_meta, "transcribed": True, "transcription_provider": "gemini"}
+    return chunk_transcript_with_timestamps(segments, source_type, gemini_meta)
 
 
 def transcribe_file_with_gemini(file_bytes: bytes, source_type: str, api_key: str) -> str:
