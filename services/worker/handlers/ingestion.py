@@ -197,6 +197,8 @@ NO_CAPTIONS_MESSAGE = (
 
 
 def get_youtube_transcript(video_id: str) -> list[dict] | None:
+    import logging
+    logger = logging.getLogger(__name__)
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         ytt = YouTubeTranscriptApi()
@@ -204,13 +206,13 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
         transcript = None
         try:
             transcript = transcript_list.find_manually_created_transcript(["ar", "en"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.info("No manual transcript: %s", e)
         if transcript is None:
             try:
                 transcript = transcript_list.find_generated_transcript(["ar", "en"])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.info("No generated transcript: %s", e)
         if transcript is None:
             return None
         fetched = transcript.fetch()
@@ -222,7 +224,8 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
             }
             for t in fetched
         ]
-    except Exception:
+    except Exception as e:
+        logger.error("get_youtube_transcript failed for %s: %s", video_id, e)
         return None
 
 
