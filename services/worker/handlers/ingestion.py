@@ -204,7 +204,11 @@ async def get_google_access_token(db, tenant_id: str) -> str | None:
         select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
     )
     ts = result.scalar_one_or_none()
-    if not ts or not ts.google_access_token:
+    if not ts:
+        logger.warning("No tenant settings found for tenant %s", tenant_id)
+        return None
+    if not ts.google_access_token:
+        logger.warning("No Google access token for tenant %s", tenant_id)
         return None
     # Refresh if expired
     if ts.google_token_expiry:
