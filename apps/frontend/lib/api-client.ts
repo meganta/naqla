@@ -28,6 +28,7 @@ export interface SourceRecord {
   extra_meta: string | null;
   original_url: string | null;
   file_path: string | null;
+  error_message: string | null;
   created_at: string;
 }
 
