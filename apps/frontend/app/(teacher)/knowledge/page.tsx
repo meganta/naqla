@@ -47,7 +47,14 @@ function titleFromFile(file: File): string {
   return file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
 }
 
-function titleFromUrl(url: string): string {
+async function titleFromUrl(url: string): Promise<string> {
+  try {
+    const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.title) return data.title;
+    }
+  } catch {}
   try {
     const u = new URL(url);
     const v = u.searchParams.get("v");
@@ -122,7 +129,7 @@ export default function KnowledgePage() {
       const title = isFile && selectedFile
         ? titleFromFile(selectedFile)
         : isUrl && originalUrl
-        ? titleFromUrl(originalUrl)
+        ? await titleFromUrl(originalUrl)
         : selectedType;
 
       const createPayload: any = { title, source_type: selectedType };
