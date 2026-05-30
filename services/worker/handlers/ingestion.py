@@ -199,16 +199,28 @@ NO_CAPTIONS_MESSAGE = (
 def get_youtube_transcript(video_id: str) -> list[dict] | None:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        transcript = YouTubeTranscriptApi.get_transcript(
-            video_id, languages=["ar", "en", "a.ar", "a.en"]
-        )
+        ytt = YouTubeTranscriptApi()
+        transcript_list = ytt.list(video_id)
+        transcript = None
+        try:
+            transcript = transcript_list.find_manually_created_transcript(["ar", "en"])
+        except Exception:
+            pass
+        if transcript is None:
+            try:
+                transcript = transcript_list.find_generated_transcript(["ar", "en"])
+            except Exception:
+                pass
+        if transcript is None:
+            return None
+        fetched = transcript.fetch()
         return [
             {
-                "text": t["text"],
-                "start": _fmt_seconds(t["start"]),
-                "end": _fmt_seconds(t["start"] + t["duration"]),
+                "text": t.text,
+                "start": _fmt_seconds(t.start),
+                "end": _fmt_seconds(t.start + t.duration),
             }
-            for t in transcript
+            for t in fetched
         ]
     except Exception:
         return None
