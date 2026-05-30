@@ -49,6 +49,8 @@ export const api = {
       request<{ auth_url: string }>("/auth/google", {}, token),
     getStatus: (token: string) =>
       request<{ connected: boolean }>("/auth/google/status", {}, token),
+    disconnect: (token: string) =>
+      request<{ disconnected: boolean }>("/auth/google", { method: "DELETE" }, token),
   },
   auth: {
     register: (data: {

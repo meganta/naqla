@@ -73,6 +73,19 @@ async def google_oauth_callback(
     return RedirectResponse(url=f"{settings.frontend_url}/settings?google_connected=true")
 
 
+@router.delete("/google")
+async def google_oauth_disconnect(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_settings = await get_tenant_settings(db, current_user.tenant_id)
+    tenant_settings.google_access_token = None
+    tenant_settings.google_refresh_token = None
+    tenant_settings.google_token_expiry = None
+    await db.commit()
+    return {"disconnected": True}
+
+
 @router.get("/google/status")
 async def google_oauth_status(
     current_user=Depends(get_current_user),

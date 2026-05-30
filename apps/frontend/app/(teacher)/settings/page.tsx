@@ -305,9 +305,21 @@ export default function SettingsPage() {
             اربط حسابك على Google للسماح بتحميل التفريغ النصي من فيديوهاتك تلقائياً
           </p>
           {googleConnected ? (
-            <div className="flex items-center gap-2 text-green-600 text-sm">
-              <span>✓</span>
-              <span>تم ربط حساب Google بنجاح</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-green-600 text-sm">
+                <span>✓</span>
+                <span>تم ربط حساب Google بنجاح</span>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!token) return;
+                  await api.google.disconnect(token);
+                  setGoogleConnected(false);
+                }}
+                className="text-xs text-red-500 hover:text-red-700"
+              >
+                إلغاء الربط
+              </button>
             </div>
           ) : (
             <button
