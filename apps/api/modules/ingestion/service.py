@@ -113,13 +113,41 @@ async def confirm_upload(
     return source
 
 
-async def list_sources(db: AsyncSession, tenant_id: str) -> list[KnowledgeSource]:
-    result = await db.execute(
+async def list_sources(db: AsyncSession, tenant_id: str) -> list:
+    """List sources with latest job error_message attached."""
+    from sqlalchemy import and_, func
+
+    latest_job_subq = (
+        select(
+            IngestionJob.source_id,
+            func.max(IngestionJob.created_at).label("max_created_at"),
+        )
+        .where(IngestionJob.tenant_id == tenant_id)
+        .group_by(IngestionJob.source_id)
+        .subquery()
+    )
+    latest_job_error = (
+        select(IngestionJob.source_id, IngestionJob.error_message)
+        .join(
+            latest_job_subq,
+            and_(
+                IngestionJob.source_id == latest_job_subq.c.source_id,
+                IngestionJob.created_at == latest_job_subq.c.max_created_at,
+            ),
+        )
+        .subquery()
+    )
+    sources_result = await db.execute(
         select(KnowledgeSource)
         .where(KnowledgeSource.tenant_id == tenant_id)
         .order_by(KnowledgeSource.created_at.desc())
     )
-    return list(result.scalars().all())
+    sources = list(sources_result.scalars().all())
+    errors_result = await db.execute(select(latest_job_error))
+    error_map = {row[0]: row[1] for row in errors_result.fetchall()}
+    for source in sources:
+        source.error_message = error_map.get(source.id)
+    return sources
 
 
 async def get_source(

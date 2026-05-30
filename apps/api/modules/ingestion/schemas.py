@@ -18,6 +18,7 @@ class SourceResponse(BaseModel):
     file_path: str | None
     original_url: str | None
     extra_meta: str | None
+    error_message: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

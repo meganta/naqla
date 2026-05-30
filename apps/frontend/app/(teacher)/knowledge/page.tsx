@@ -311,6 +311,11 @@ export default function KnowledgePage() {
                       {source.original_url && (
                         <p className="text-xs text-gray-400 truncate max-w-xs">{source.original_url}</p>
                       )}
+                      {source.status === "failed" && source.error_message && (
+                        <p className="text-xs text-red-600 mt-1 max-w-sm leading-relaxed">
+                          {source.error_message}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">

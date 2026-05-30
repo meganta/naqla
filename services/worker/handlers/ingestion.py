@@ -200,7 +200,7 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         transcript = YouTubeTranscriptApi.get_transcript(
-            video_id, languages=["ar", "en"]
+            video_id, languages=["ar", "en", "a.ar", "a.en"]
         )
         return [
             {
