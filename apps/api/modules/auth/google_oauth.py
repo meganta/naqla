@@ -69,7 +69,8 @@ async def google_oauth_callback(
     tenant_settings.google_token_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
     await db.commit()
 
-    return {"location": f"{settings.frontend_url}/settings?google_connected=true"}
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"{settings.frontend_url}/settings?google_connected=true")
 
 
 @router.get("/google/status")

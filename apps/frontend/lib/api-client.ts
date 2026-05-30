@@ -44,6 +44,12 @@ export interface JobRecord {
 }
 
 export const api = {
+  google: {
+    getAuthUrl: (token: string) =>
+      request<{ auth_url: string }>("/auth/google", {}, token),
+    getStatus: (token: string) =>
+      request<{ connected: boolean }>("/auth/google/status", {}, token),
+  },
   auth: {
     register: (data: {
       email: string;
