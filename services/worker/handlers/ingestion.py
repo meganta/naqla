@@ -5,6 +5,7 @@ import os
 import tempfile
 from datetime import datetime
 
+from core.config import settings
 from google.cloud import storage
 from sqlalchemy import select
 
@@ -196,6 +197,113 @@ NO_CAPTIONS_MESSAGE = (
 )
 
 
+async def get_google_access_token(db, tenant_id: str) -> str | None:
+    from datetime import timezone
+    from ingestion_models import TenantSettings
+    result = await db.execute(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+    )
+    ts = result.scalar_one_or_none()
+    if not ts or not ts.google_access_token:
+        return None
+    # Refresh if expired
+    if ts.google_token_expiry:
+        expiry = ts.google_token_expiry
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        from datetime import timedelta
+        if datetime.now(timezone.utc) >= expiry - timedelta(minutes=5):
+            import httpx
+            resp = httpx.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "refresh_token": ts.google_refresh_token,
+                    "grant_type": "refresh_token",
+                },
+            )
+            if resp.status_code == 200:
+                token_data = resp.json()
+                ts.google_access_token = token_data["access_token"]
+                from datetime import timedelta as td
+                ts.google_token_expiry = datetime.now(timezone.utc) + td(
+                    seconds=token_data.get("expires_in", 3600)
+                )
+                await db.commit()
+            else:
+                return None
+    return ts.google_access_token
+
+
+async def get_youtube_transcript_oauth(
+    video_id: str, access_token: str
+) -> list[dict] | None:
+    import httpx
+    headers = {"Authorization": f"Bearer {access_token}"}
+    # List available caption tracks
+    list_url = "https://www.googleapis.com/youtube/v3/captions"
+    resp = httpx.get(
+        list_url,
+        params={"part": "snippet", "videoId": video_id},
+        headers=headers,
+    )
+    if resp.status_code != 200:
+        logger.error("Failed to list captions for %s: %s", video_id, resp.text)
+        return None
+    items = resp.json().get("items", [])
+    if not items:
+        return None
+    # Prefer Arabic, then English
+    caption_id = None
+    for lang in ["ar", "en"]:
+        for item in items:
+            if item["snippet"]["language"] == lang:
+                caption_id = item["id"]
+                break
+        if caption_id:
+            break
+    if not caption_id:
+        caption_id = items[0]["id"]
+    # Download caption track (SRT format)
+    dl_url = f"https://www.googleapis.com/youtube/v3/captions/{caption_id}"
+    resp = httpx.get(
+        dl_url,
+        params={"tfmt": "srt"},
+        headers=headers,
+    )
+    if resp.status_code != 200:
+        logger.error("Failed to download caption %s: %s", caption_id, resp.text)
+        return None
+    # Parse SRT into segments
+    segments = []
+    blocks = resp.text.strip().split(chr(10)+chr(10))
+    for block in blocks:
+        lines = block.strip().split(chr(10))
+        if len(lines) < 3:
+            continue
+        # lines[0] = index, lines[1] = timestamps, lines[2+] = text
+        timestamp_line = lines[1]
+        text = " ".join(lines[2:]).strip()
+        if not text:
+            continue
+        try:
+            start_str = timestamp_line.split(" --> ")[0].strip()
+            h, m, s = start_str.replace(",", ".").split(":")
+            start_sec = int(h) * 3600 + int(m) * 60 + float(s)
+            end_str = timestamp_line.split(" --> ")[1].strip()
+            h, m, s = end_str.replace(",", ".").split(":")
+            end_sec = int(h) * 3600 + int(m) * 60 + float(s)
+            segments.append({
+                "text": text,
+                "start": _fmt_seconds(start_sec),
+                "end": _fmt_seconds(end_sec),
+            })
+        except Exception:
+            continue
+    return segments if segments else None
+
+
 def get_youtube_transcript(video_id: str) -> list[dict] | None:
     import logging
     logger = logging.getLogger(__name__)
@@ -277,9 +385,12 @@ def chunk_transcript_with_timestamps(
     return chunks
 
 
-def extract_youtube_chunks(url: str, source_type: str) -> list[dict]:
+async def extract_youtube_chunks(
+    url: str, source_type: str, db=None, tenant_id: str | None = None
+) -> list[dict]:
     """
-    Extract chunks from a YouTube video using captions only.
+    Extract chunks from a YouTube video.
+    Tries OAuth (YouTube Data API) first, falls back to youtube-transcript-api.
     Raises ValueError with Arabic instruction if no captions available.
     """
     video_id = extract_video_id(url)
@@ -294,6 +405,15 @@ def extract_youtube_chunks(url: str, source_type: str) -> list[dict]:
         "video_id": video_id,
         "language": "ar",
     }
+    # Try OAuth first
+    if db is not None and tenant_id is not None:
+        access_token = await get_google_access_token(db, tenant_id)
+        if access_token:
+            segments = await get_youtube_transcript_oauth(video_id, access_token)
+            if segments:
+                return chunk_transcript_with_timestamps(segments, source_type, base_meta)
+            logger.warning("OAuth transcript failed for %s, falling back", video_id)
+    # Fallback to youtube-transcript-api
     segments = get_youtube_transcript(video_id)
     if not segments:
         raise ValueError(NO_CAPTIONS_MESSAGE)
@@ -376,7 +496,6 @@ async def process_ingestion_job(
     bucket_name: str,
 ) -> int:
     from arabic_processing.chunker import chunk_arabic_text
-    from core.config import settings
     from ingestion_models import IngestionJob, KnowledgeChunk, KnowledgeSource
 
     job_result = await db.execute(
@@ -425,7 +544,7 @@ async def process_ingestion_job(
                     "No URL provided for YouTube source. "
                     "Set original_url when creating a youtube source."
                 )
-            raw_chunks = extract_youtube_chunks(url, "youtube")
+            raw_chunks = await extract_youtube_chunks(url, "youtube", db=db, tenant_id=tenant_id)
             text = None
 
         elif source.source_type == "youtube_channel":

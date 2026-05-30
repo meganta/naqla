@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     api_service_url: str = "http://localhost:8000"
     youtube_api_key: str = ""
     youtube_channel_max_videos: int = 25
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
 
 settings = Settings()
