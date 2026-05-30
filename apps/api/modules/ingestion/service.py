@@ -272,6 +272,7 @@ async def enqueue_ingestion_job(
     )
     db.add(job)
     await db.flush()
+    await db.commit()
 
     client = tasks_v2.CloudTasksClient()
     queue_path = client.queue_path(
