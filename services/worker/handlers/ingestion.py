@@ -1,6 +1,8 @@
 import io
 import json
 import logging
+import os
+import tempfile
 from datetime import datetime
 
 from google.cloud import storage
@@ -8,6 +10,10 @@ from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Embeddings
+# ---------------------------------------------------------------------------
 
 def generate_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
     """Generate embeddings for a list of texts using OpenAI."""
@@ -20,12 +26,20 @@ def generate_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
     return [item.embedding for item in response.data]
 
 
+# ---------------------------------------------------------------------------
+# GCS helpers
+# ---------------------------------------------------------------------------
+
 def download_file(bucket_name: str, file_path: str) -> bytes:
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(file_path)
     return blob.download_as_bytes()
 
+
+# ---------------------------------------------------------------------------
+# Text extraction (PDF / DOCX / PPTX)
+# ---------------------------------------------------------------------------
 
 def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
     if source_type == "pdf":
@@ -66,6 +80,92 @@ def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Transcription provider abstraction
+# ---------------------------------------------------------------------------
+
+class TranscriptionProvider:
+    """Abstract base for audio/video transcription providers."""
+
+    def transcribe(self, file_bytes: bytes, source_type: str) -> list[dict]:
+        """
+        Transcribe audio/video bytes.
+        Returns list of segments: [{"text": str, "start": "HH:MM:SS", "end": "HH:MM:SS"}]
+        Raises ValueError on failure.
+        """
+        raise NotImplementedError
+
+
+class WhisperTranscriptionProvider(TranscriptionProvider):
+    """OpenAI Whisper transcription provider."""
+
+    def __init__(self, api_key: str) -> None:
+        self.api_key = api_key
+
+    def transcribe(self, file_bytes: bytes, source_type: str) -> list[dict]:
+        import openai
+
+        client = openai.OpenAI(api_key=self.api_key)
+        ext = "mp3" if source_type == "audio" else "mp4"
+        suffix = f".{ext}"
+
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+
+        try:
+            with open(tmp_path, "rb") as audio_file:
+                response = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="ar",
+                    response_format="verbose_json",
+                    timestamp_granularities=["segment"],
+                )
+        finally:
+            os.unlink(tmp_path)
+
+        segments = []
+        for seg in (response.segments or []):
+            segments.append({
+                "text": seg.text.strip(),
+                "start": _seconds_to_time(seg.start),
+                "end": _seconds_to_time(seg.end),
+            })
+
+        if not segments and response.text:
+            segments = [{"text": response.text.strip(), "start": "00:00:00", "end": "00:00:00"}]
+
+        if not segments:
+            raise ValueError("Whisper transcription produced no content.")
+
+        return segments
+
+
+def _seconds_to_time(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def get_transcription_provider(source_type: str, openai_api_key: str) -> TranscriptionProvider:
+    """
+    Return the appropriate transcription provider for uploaded audio/video files.
+    Raises ValueError if no provider is available.
+    """
+    if not openai_api_key:
+        raise ValueError(
+            "OpenAI API key is not configured. "
+            "Set OPENAI_API_KEY in worker environment to enable audio/video transcription."
+        )
+    return WhisperTranscriptionProvider(api_key=openai_api_key)
+
+
+# ---------------------------------------------------------------------------
+# YouTube helpers
+# ---------------------------------------------------------------------------
+
 def extract_video_id(url: str) -> str | None:
     import re
     patterns = [
@@ -86,6 +186,16 @@ def _fmt_seconds(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
+NO_CAPTIONS_MESSAGE = (
+    "لا يوجد تفريغ نصي أو ترجمة متاحة لهذا الفيديو على YouTube. "
+    "إذا كنت مالك الفيديو، يمكنك إضافة الترجمة من YouTube Studio دون إعادة رفع الفيديو: "
+    "افتح YouTube Studio، ثم Subtitles، اختر الفيديو، أضف اللغة، "
+    "ثم أضف الترجمة عبر رفع ملف ترجمة أو استخدام Auto-sync أو الكتابة اليدوية. "
+    "بعد إضافة الترجمة، أعد محاولة الاستيراد في نقلة. "
+    "أو يمكنك رفع ملف الفيديو/الصوت الأصلي مباشرة إلى نقلة ليتم تفريغه بالذكاء الاصطناعي."
+)
+
+
 def get_youtube_transcript(video_id: str) -> list[dict] | None:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
@@ -102,55 +212,6 @@ def get_youtube_transcript(video_id: str) -> list[dict] | None:
         ]
     except Exception:
         return None
-
-
-def transcribe_youtube_with_gemini(video_id: str, api_key: str) -> list[dict]:
-    """
-    Transcribe a YouTube video using Gemini with timestamps.
-    Returns list of segments: [{text, start, end}, ...]
-    """
-    from google import genai
-    from google.genai import types
-    import re
-
-    client = genai.Client(api_key=api_key)
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    prompt = (
-        "Transcribe the spoken content of this video with timestamps. "
-        "Format each segment exactly like this:\n"
-        "[HH:MM:SS --> HH:MM:SS] text here\n"
-        "If the video is in Arabic, transcribe in Arabic. "
-        "If in English, transcribe in English. "
-        "Output only the timestamped segments, nothing else."
-    )
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=types.Content(
-            parts=[
-                types.Part(text=url),
-                types.Part(text=prompt),
-            ]
-        ),
-        config=types.GenerateContentConfig(max_output_tokens=8192),
-    )
-    raw = response.text or ""
-
-    # Parse timestamped segments
-    pattern = re.compile(
-        r"\[(\d{2}:\d{2}:\d{2})\s*-->\s*(\d{2}:\d{2}:\d{2})\]\s*(.+?)(?=\[|\Z)",
-        re.DOTALL,
-    )
-    segments = []
-    for match in pattern.finditer(raw):
-        start, end, text = match.group(1), match.group(2), match.group(3).strip()
-        if text:
-            segments.append({"text": text, "start": start, "end": end})
-
-    # Fallback: if no timestamps parsed, return as single segment
-    if not segments and raw.strip():
-        segments = [{"text": raw.strip(), "start": "00:00:00", "end": "00:00:00"}]
-
-    return segments
 
 
 def chunk_transcript_with_timestamps(
@@ -202,6 +263,10 @@ def chunk_transcript_with_timestamps(
 
 
 def extract_youtube_chunks(url: str, source_type: str) -> list[dict]:
+    """
+    Extract chunks from a YouTube video using captions only.
+    Raises ValueError with Arabic instruction if no captions available.
+    """
     video_id = extract_video_id(url)
     if not video_id:
         raise ValueError(
@@ -216,87 +281,13 @@ def extract_youtube_chunks(url: str, source_type: str) -> list[dict]:
     }
     segments = get_youtube_transcript(video_id)
     if not segments:
-        raise ValueError(
-            f"No transcript available for video {video_id}. "
-            "The video must have Arabic or English captions enabled."
-        )
+        raise ValueError(NO_CAPTIONS_MESSAGE)
     return chunk_transcript_with_timestamps(segments, source_type, base_meta)
 
 
-def extract_youtube_chunks_with_fallback(
-    url: str, source_type: str, api_key: str | None = None
-) -> list[dict]:
-    """Try captions first, fallback to Whisper transcription if no captions."""
-    video_id = extract_video_id(url)
-    if not video_id:
-        raise ValueError(
-            f"Could not extract video ID from URL: {url}. "
-            "Provide a valid YouTube video URL."
-        )
-
-    base_meta = {
-        "source_type": source_type,
-        "source_url": url,
-        "video_id": video_id,
-        "language": "ar",
-    }
-
-    # Try captions first
-    segments = get_youtube_transcript(video_id)
-    if segments:
-        return chunk_transcript_with_timestamps(segments, source_type, base_meta)
-
-    # Fallback: transcribe using Gemini native video understanding
-    if not api_key:
-        raise ValueError(
-            f"No transcript available for video {video_id} and "
-            "no Gemini API key configured for transcription fallback."
-        )
-
-    try:
-        segments = transcribe_youtube_with_gemini(video_id, api_key)
-    except Exception as e:
-        raise ValueError(
-            f"Gemini transcription failed for video {video_id}: {e}"
-        ) from e
-
-    if not segments:
-        raise ValueError(
-            f"Transcription produced no content for video {video_id}."
-        )
-
-    # Add transcription metadata to base_meta
-    gemini_meta = {**base_meta, "transcribed": True, "transcription_provider": "gemini"}
-    return chunk_transcript_with_timestamps(segments, source_type, gemini_meta)
-
-
-def transcribe_file_with_gemini(file_bytes: bytes, source_type: str, api_key: str) -> str:
-    """Transcribe an audio or video file using Gemini."""
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=api_key)
-    mime_type = "audio/mpeg" if source_type == "audio" else "video/mp4"
-    prompt = (
-        "Please transcribe the spoken content of this file in full. "
-        "If the content is in Arabic, transcribe in Arabic. "
-        "If in English, transcribe in English. "
-        "Output only the transcription text, no timestamps or labels."
-    )
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=types.Content(
-            parts=[
-                types.Part(
-                    inline_data=types.Blob(mime_type=mime_type, data=file_bytes)
-                ),
-                types.Part(text=prompt),
-            ]
-        ),
-        config=types.GenerateContentConfig(max_output_tokens=8192),
-    )
-    return response.text or ""
-
+# ---------------------------------------------------------------------------
+# YouTube channel helpers
+# ---------------------------------------------------------------------------
 
 def get_channel_video_ids(
     channel_identifier: str, api_key: str, max_videos: int = 25
@@ -358,6 +349,10 @@ def get_channel_video_ids(
     return video_ids
 
 
+# ---------------------------------------------------------------------------
+# Main ingestion job processor
+# ---------------------------------------------------------------------------
+
 async def process_ingestion_job(
     db,
     job_id: str,
@@ -404,7 +399,8 @@ async def process_ingestion_job(
             text = source.raw_text or ""
             if not text.strip():
                 raise ValueError(
-                    "No text content found. Provide raw_text when creating a text/manual source."
+                    "No text content found. "
+                    "Provide raw_text when creating a text/manual source."
                 )
 
         elif source.source_type == "youtube":
@@ -414,36 +410,41 @@ async def process_ingestion_job(
                     "No URL provided for YouTube source. "
                     "Set original_url when creating a youtube source."
                 )
-            raw_chunks = extract_youtube_chunks_with_fallback(
-                url, "youtube", api_key=settings.gemini_api_key or None
-            )
+            raw_chunks = extract_youtube_chunks(url, "youtube")
             text = None
 
         elif source.source_type == "youtube_channel":
             url = source.original_url or ""
             if not url:
                 raise ValueError(
-                    "No URL or handle provided for YouTube channel source. "
-                    "Set original_url when creating a youtube_channel source."
+                    "No URL or handle provided for YouTube channel source."
                 )
             if not settings.youtube_api_key:
                 raise ValueError(
                     "YouTube Data API key is not configured. "
                     "Set YOUTUBE_API_KEY in worker environment."
                 )
-            channel_id = url.replace("https://www.youtube.com/", "").replace("https://youtube.com/", "")
+            channel_id = (
+                url.replace("https://www.youtube.com/", "")
+                .replace("https://youtube.com/", "")
+            )
             if channel_id.startswith("@"):
                 channel_id = channel_id[1:]
             video_ids = get_channel_video_ids(
-                channel_id, settings.youtube_api_key, settings.youtube_channel_max_videos
+                channel_id, settings.youtube_api_key,
+                settings.youtube_channel_max_videos,
             )
             if not video_ids:
                 raise ValueError(f"No videos found for channel: {channel_id}")
             raw_chunks = [
                 {
-                    "content_text": f"YouTube video: https://www.youtube.com/watch?v={vid}",
+                    "content_text": (
+                        f"YouTube video: https://www.youtube.com/watch?v={vid}"
+                    ),
                     "chunk_index": i,
-                    "char_count": len(f"https://www.youtube.com/watch?v={vid}") + 20,
+                    "char_count": len(
+                        f"https://www.youtube.com/watch?v={vid}"
+                    ) + 20,
                     "source_type_tag": "youtube_channel",
                     "extra_meta": json.dumps({
                         "video_id": vid,
@@ -461,26 +462,20 @@ async def process_ingestion_job(
                     f"No file uploaded for {source.source_type} source. "
                     "Upload the file first and call confirm-upload."
                 )
-            if not settings.gemini_api_key:
-                raise ValueError(
-                    "Gemini API key is not configured. "
-                    "Set GEMINI_API_KEY in worker environment."
-                )
             file_bytes = download_file(bucket_name, source.file_path)
-            try:
-                text = transcribe_file_with_gemini(
-                    file_bytes, source.source_type, settings.gemini_api_key
-                )
-            except Exception as e:
-                raise ValueError(
-                    f"Gemini transcription failed for {source.source_type} "
-                    f"source {source_id}: {e}"
-                ) from e
-            if not text.strip():
-                raise ValueError(
-                    f"Transcription produced no text for {source.source_type} "
-                    f"source {source_id}."
-                )
+            provider = get_transcription_provider(
+                source.source_type, settings.openai_api_key
+            )
+            segments = provider.transcribe(file_bytes, source.source_type)
+            base_meta = {
+                "source_type": source.source_type,
+                "file_path": source.file_path,
+                "transcription_provider": "whisper",
+            }
+            raw_chunks = chunk_transcript_with_timestamps(
+                segments, source.source_type, base_meta
+            )
+            text = None
 
         elif source.file_path:
             file_bytes = download_file(bucket_name, source.file_path)
@@ -493,7 +488,9 @@ async def process_ingestion_job(
             )
 
     except ValueError as e:
-        logger.exception("Ingestion failed job=%s source=%s: %s", job_id, source_id, e)
+        logger.exception(
+            "Ingestion failed job=%s source=%s: %s", job_id, source_id, e
+        )
         job.status = "failed"
         job.error_message = str(e)
         source.status = "failed"
@@ -509,7 +506,6 @@ async def process_ingestion_job(
     if raw_chunks and settings.openai_api_key:
         try:
             texts = [r["content_text"] for r in raw_chunks]
-            # Process in batches of 100 to avoid API limits
             for i in range(0, len(texts), 100):
                 batch = texts[i:i + 100]
                 batch_embeddings = generate_embeddings(batch, settings.openai_api_key)
