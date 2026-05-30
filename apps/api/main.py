@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
+from modules.auth.google_oauth import router as google_oauth_router
 from modules.auth.router import router as auth_router
 from modules.copilot.router import router as copilot_router
 from modules.ingestion.router import router as ingestion_router
@@ -26,6 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(google_oauth_router)
 app.include_router(ingestion_router)
 app.include_router(copilot_router)
 app.include_router(settings_router)

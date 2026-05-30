@@ -125,6 +125,10 @@ class TenantSettings(Base):
     academic_year: Mapped[str | None] = mapped_column(String(20), nullable=True)
     teaching_language: Mapped[str | None] = mapped_column(String(50), nullable=True)
     student_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Google OAuth
+    google_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_token_expiry: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Copilot behavior
     copilot_tone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     copilot_response_language: Mapped[str | None] = mapped_column(String(50), nullable=True)

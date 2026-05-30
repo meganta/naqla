@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     youtube_api_key: str = ""
     worker_service_url: str = "http://localhost:8001"
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    frontend_url: str = "http://localhost:3000"
+    api_url: str = "http://localhost:8000"
     cors_origins_str: str = "http://localhost:3000"
     cors_origins: list[str] = []
 
