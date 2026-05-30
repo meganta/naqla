@@ -8,27 +8,40 @@ from modules.ingestion.models import KnowledgeSource
 
 async def resolve_channel_id(channel_identifier: str) -> str:
     """Resolve a channel handle or URL to a channel ID using YouTube Data API."""
+    if not channel_identifier or not channel_identifier.strip():
+        raise ValueError(
+            "Channel identifier is empty. Please set your YouTube channel in settings."
+        )
     if channel_identifier.startswith("UC") and len(channel_identifier) == 24:
         return channel_identifier
-
     handle = channel_identifier.lstrip("@")
     async with httpx.AsyncClient() as client:
+        # Use forHandle — official way to resolve @handles reliably
         resp = await client.get(
-            "https://www.googleapis.com/youtube/v3/search",
-            params={
-                "part": "snippet",
-                "q": handle,
-                "type": "channel",
-                "maxResults": 1,
-                "key": settings.youtube_api_key,
-            },
+            "https://www.googleapis.com/youtube/v3/channels",
+            params={"part": "id", "forHandle": handle, "key": settings.youtube_api_key},
             timeout=30,
         )
         resp.raise_for_status()
         items = resp.json().get("items", [])
-        if not items:
+        if items:
+            return items[0]["id"]
+        # Fallback to search
+        resp2 = await client.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params={
+                "part": "snippet", "q": handle,
+                "type": "channel", "maxResults": 1,
+                "key": settings.youtube_api_key,
+            },
+            timeout=30,
+        )
+        resp2.raise_for_status()
+        items2 = resp2.json().get("items", [])
+        if not items2:
             raise ValueError(f"Could not find YouTube channel: {channel_identifier}")
-        return items[0]["snippet"]["channelId"]
+        return items2[0]["snippet"]["channelId"]
+
 
 
 async def get_uploads_playlist_id(channel_id: str) -> str:
