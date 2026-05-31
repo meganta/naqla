@@ -383,12 +383,12 @@ export default function KnowledgePage() {
                             d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                         </svg>
                       )}
-                      {source.status === "processing"
+                      {["processing", "uploaded"].includes(source.status)
                         ? ["audio", "video", "youtube", "youtube_channel"].includes(source.source_type)
                           ? "جاري التفريغ الصوتي..."
                           : ["pdf", "docx", "pptx"].includes(source.source_type)
                           ? "جاري استخراج النص..."
-                          : STATUS_LABELS[source.status]
+                          : "جاري المعالجة..."
                         : STATUS_LABELS[source.status] || source.status}
                       {source.status === "processing" && elapsedTimes[source.id] && (
                         <span className="mr-1 text-xs opacity-70">
