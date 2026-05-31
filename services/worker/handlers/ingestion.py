@@ -231,7 +231,7 @@ async def get_google_access_token(db, tenant_id: str) -> str | None:
                 token_data = resp.json()
                 ts.google_access_token = token_data["access_token"]
                 from datetime import timedelta as td
-                ts.google_token_expiry = datetime.now(timezone.utc) + td(
+                ts.google_token_expiry = datetime.utcnow() + td(
                     seconds=token_data.get("expires_in", 3600)
                 )
                 await db.commit()
