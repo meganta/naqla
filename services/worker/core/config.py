@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     youtube_channel_max_videos: int = 25
     google_client_id: str = ""
     google_client_secret: str = ""
+    supadata_api_key: str = ""
 
 
 settings = Settings()

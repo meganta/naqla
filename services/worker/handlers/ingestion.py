@@ -308,9 +308,45 @@ async def get_youtube_transcript_oauth(
     return segments if segments else None
 
 
+def get_youtube_transcript_supadata(video_id: str) -> list[dict] | None:
+    if not settings.supadata_api_key:
+        return None
+    try:
+        import httpx
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        resp = httpx.get(
+            "https://api.supadata.ai/v1/youtube/transcript",
+            params={"url": url, "text": "false"},
+            headers={"x-api-key": settings.supadata_api_key},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            logger.error("Supadata failed for %s: %s", video_id, resp.text)
+            return None
+        data = resp.json()
+        segments = data.get("content", [])
+        if not segments:
+            return None
+        return [
+            {
+                "text": s.get("text", ""),
+                "start": _fmt_seconds(s.get("offset", 0) / 1000),
+                "end": _fmt_seconds((s.get("offset", 0) + s.get("duration", 0)) / 1000),
+            }
+            for s in segments
+            if s.get("text")
+        ]
+    except Exception as e:
+        logger.error("Supadata error for %s: %s", video_id, e)
+        return None
+
+
 def get_youtube_transcript(video_id: str) -> list[dict] | None:
-    import logging
-    logger = logging.getLogger(__name__)
+    # Try Supadata first
+    segments = get_youtube_transcript_supadata(video_id)
+    if segments:
+        return segments
+    # Fallback to youtube-transcript-api
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         ytt = YouTubeTranscriptApi()
