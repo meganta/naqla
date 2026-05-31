@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ChannelImportModal } from "@/components/knowledge/channel-import-modal";
 import { useAuth } from "@/lib/auth";
 import {
@@ -75,6 +75,30 @@ export default function KnowledgePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [originalUrl, setOriginalUrl] = useState("");
   const [uploadProgress, setUploadProgress] = useState<string>("");
+  const [uploadPercent, setUploadPercent] = useState<number>(0);
+  const [elapsedTimes, setElapsedTimes] = useState<Record<string, number>>({});
+  const processingStartTimes = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    sources.forEach((s) => {
+      if (s.status === "processing" && !processingStartTimes.current[s.id]) {
+        processingStartTimes.current[s.id] = Date.now();
+      }
+      if (s.status !== "processing") {
+        delete processingStartTimes.current[s.id];
+      }
+    });
+    const hasProcessing = sources.some((s) => s.status === "processing");
+    if (!hasProcessing) return;
+    const timer = setInterval(() => {
+      const times: Record<string, number> = {};
+      Object.entries(processingStartTimes.current).forEach(([id, start]) => {
+        times[id] = Math.floor((Date.now() - (start as number)) / 1000);
+      });
+      setElapsedTimes(times);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [sources]);
   const [showChannelModal, setShowChannelModal] = useState(false);
 
   const handleDelete = async (sourceId: string) => {
@@ -139,11 +163,19 @@ export default function KnowledgePage() {
 
       if (isFile && source.upload_url && selectedFile) {
         setUploadProgress("جاري رفع الملف...");
-        const uploadRes = await fetch(source.upload_url, {
-          method: "PUT",
-          body: selectedFile,
+        setUploadPercent(0);
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              setUploadPercent(Math.round((e.loaded / e.total) * 100));
+            }
+          };
+          xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("فشل رفع الملف إلى التخزين السحابي"));
+          xhr.onerror = () => reject(new Error("فشل رفع الملف إلى التخزين السحابي"));
+          xhr.open("PUT", source.upload_url);
+          xhr.send(selectedFile);
         });
-        if (!uploadRes.ok) throw new Error("فشل رفع الملف إلى التخزين السحابي");
         setUploadProgress("تم الرفع، جاري التأكيد...");
         await confirmUpload(source.source_id, token);
       }
@@ -278,11 +310,22 @@ export default function KnowledgePage() {
                     {loading ? "جاري المعالجة..." : "إضافة"}
                   </button>
                   {uploadProgress && (
-                    <p className={`text-sm ${
-                      uploadProgress.startsWith("خطأ") ? "text-red-600" : "text-indigo-600"
-                    }`}>
-                      {uploadProgress}
-                    </p>
+                    <div className="text-sm">
+                      <p className={uploadProgress.startsWith("خطأ") ? "text-red-600" : "text-indigo-600"}>
+                        {uploadProgress}
+                        {uploadProgress === "جاري رفع الملف..." && uploadPercent > 0 && (
+                          <span className="mr-2 font-medium">{uploadPercent}%</span>
+                        )}
+                      </p>
+                      {uploadProgress === "جاري رفع الملف..." && uploadPercent > 0 && (
+                        <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
+                          <div
+                            className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadPercent}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -340,11 +383,39 @@ export default function KnowledgePage() {
                             d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                         </svg>
                       )}
-                      {STATUS_LABELS[source.status] || source.status}
+                      {source.status === "processing"
+                        ? ["audio", "video", "youtube", "youtube_channel"].includes(source.source_type)
+                          ? "جاري التفريغ الصوتي..."
+                          : ["pdf", "docx", "pptx"].includes(source.source_type)
+                          ? "جاري استخراج النص..."
+                          : STATUS_LABELS[source.status]
+                        : STATUS_LABELS[source.status] || source.status}
+                      {source.status === "processing" && elapsedTimes[source.id] && (
+                        <span className="mr-1 text-xs opacity-70">
+                          ({elapsedTimes[source.id]}s)
+                        </span>
+                      )}
                     </span>
                     <span className="text-xs text-gray-400">
                       {new Date(source.created_at).toLocaleDateString("ar-SA")}
                     </span>
+                    {source.status === "failed" && (
+                      <button
+                        onClick={async () => {
+                          if (!token) return;
+                          try {
+                            await processSource(source.id, token);
+                            await fetchSources();
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                        className="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1
+                          rounded hover:bg-indigo-50 transition-colors"
+                      >
+                        إعادة المحاولة
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDelete(source.id)}
                       className="text-xs text-red-500 hover:text-red-700 px-2 py-1
