@@ -402,12 +402,14 @@ export default function KnowledgePage() {
                     {source.status === "failed" && (
                       <button
                         onClick={async () => {
+                          console.log("retry clicked", source.id, token);
                           if (!token) return;
                           try {
-                            await processSource(source.id, token);
+                            const result = await processSource(source.id, token);
+                            console.log("retry result", result);
                             await fetchSources();
                           } catch (e) {
-                            console.error(e);
+                            console.error("retry error", e);
                           }
                         }}
                         className="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1
