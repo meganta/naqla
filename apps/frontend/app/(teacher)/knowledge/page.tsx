@@ -402,12 +402,12 @@ export default function KnowledgePage() {
                     {source.status === "failed" && (
                       <button
                         onClick={async () => {
-                          console.log("retry clicked", source.id, token);
                           if (!token) return;
                           try {
-                            const result = await processSource(source.id, token);
-                            console.log("retry result", result);
-                            await fetchSources();
+                            await processSource(source.id, token);
+                            setSources((prev) => prev.map((s) =>
+                              s.id === source.id ? { ...s, status: "processing" } : s
+                            ));
                           } catch (e) {
                             console.error("retry error", e);
                           }
