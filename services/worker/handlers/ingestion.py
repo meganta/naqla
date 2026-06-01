@@ -105,42 +105,85 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
 
     def transcribe(self, file_bytes: bytes, source_type: str) -> list[dict]:
         import openai
-
+        import subprocess
         client = openai.OpenAI(api_key=self.api_key)
         ext = "mp3" if source_type == "audio" else "mp4"
         suffix = f".{ext}"
-
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(file_bytes)
             tmp_path = tmp.name
-
         try:
-            with open(tmp_path, "rb") as audio_file:
-                response = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="ar",
-                    response_format="verbose_json",
-                    timestamp_granularities=["segment"],
-                )
-        finally:
+            # Extract audio as mp3 using ffmpeg (reduces size significantly)
+            audio_path = tmp_path + ".mp3"
+            subprocess.run(
+                ["ffmpeg", "-i", tmp_path, "-vn", "-acodec", "libmp3lame",
+                 "-ar", "16000", "-ac", "1", "-b:a", "32k", "-y", audio_path],
+                check=True, capture_output=True
+            )
             os.unlink(tmp_path)
-
-        segments = []
-        for seg in (response.segments or []):
-            segments.append({
-                "text": seg.text.strip(),
-                "start": _seconds_to_time(seg.start),
-                "end": _seconds_to_time(seg.end),
-            })
-
-        if not segments and response.text:
-            segments = [{"text": response.text.strip(), "start": "00:00:00", "end": "00:00:00"}]
-
-        if not segments:
+            # Split into chunks if over 20MB
+            max_bytes = 20 * 1024 * 1024
+            audio_size = os.path.getsize(audio_path)
+            if audio_size <= max_bytes:
+                chunk_paths = [audio_path]
+                chunk_offsets = [0.0]
+            else:
+                result = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                    capture_output=True, text=True, check=True
+                )
+                duration = float(result.stdout.strip())
+                num_chunks = int(audio_size / max_bytes) + 1
+                chunk_duration = duration / num_chunks
+                chunk_paths = []
+                chunk_offsets = []
+                for i in range(num_chunks):
+                    start = i * chunk_duration
+                    chunk_path = audio_path + f".chunk{i}.mp3"
+                    subprocess.run(
+                        ["ffmpeg", "-i", audio_path, "-ss", str(start),
+                         "-t", str(chunk_duration), "-y", chunk_path],
+                        check=True, capture_output=True
+                    )
+                    chunk_paths.append(chunk_path)
+                    chunk_offsets.append(start)
+                os.unlink(audio_path)
+            # Transcribe each chunk
+            all_segments = []
+            try:
+                for chunk_path, offset in zip(chunk_paths, chunk_offsets):
+                    with open(chunk_path, "rb") as audio_file:
+                        response = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file,
+                            language="ar",
+                            response_format="verbose_json",
+                            timestamp_granularities=["segment"],
+                        )
+                    for seg in (response.segments or []):
+                        all_segments.append({
+                            "text": seg.text.strip(),
+                            "start": _seconds_to_time(seg.start + offset),
+                            "end": _seconds_to_time(seg.end + offset),
+                        })
+                    if not (response.segments or []) and response.text:
+                        all_segments.append({
+                            "text": response.text.strip(),
+                            "start": _seconds_to_time(offset),
+                            "end": _seconds_to_time(offset),
+                        })
+            finally:
+                for p in chunk_paths:
+                    if os.path.exists(p):
+                        os.unlink(p)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
+        if not all_segments:
             raise ValueError("Whisper transcription produced no content.")
-
-        return segments
+        return all_segments
 
 
 def _seconds_to_time(seconds: float) -> str:
