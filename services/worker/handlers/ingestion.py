@@ -149,7 +149,7 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
         file_bytes: bytes,
         source_type: str,
         completed_chunks: list[dict] | None = None,
-        on_chunk_complete: callable | None = None,
+        on_chunk_complete=None,
     ) -> list[dict]:
         """
         Transcribe audio/video file using Whisper.
