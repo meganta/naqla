@@ -129,7 +129,7 @@ def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
 class TranscriptionProvider:
     """Abstract base for audio/video transcription providers."""
 
-    def transcribe(self, file_bytes: bytes, source_type: str) -> list[dict]:
+    async def transcribe(self, file_bytes: bytes, source_type: str) -> list[dict]:
         """
         Transcribe audio/video bytes.
         Returns list of segments: [{"text": str, "start": "HH:MM:SS", "end": "HH:MM:SS"}]
@@ -248,7 +248,7 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
                     )
                     # Save progress via callback
                     if on_chunk_complete:
-                        on_chunk_complete(idx, chunk_segments)
+                        await on_chunk_complete(idx, chunk_segments)
             finally:
                 for p in chunk_paths:
                     if os.path.exists(p):
@@ -788,16 +788,11 @@ async def process_ingestion_job(
                     logger.info("Saved progress for chunk %d", chunk_index)
                 except Exception as e:
                     logger.warning("Failed to save chunk progress: %s", e)
-            def sync_callback(chunk_index: int, chunk_segments: list[dict]) -> None:
-                import asyncio
-                asyncio.get_event_loop().run_until_complete(
-                    save_chunk_progress(chunk_index, chunk_segments)
-                )
-            segments = provider.transcribe(
+            segments = await provider.transcribe(
                 file_bytes,
                 source.source_type,
                 completed_chunks=completed_chunks,
-                on_chunk_complete=sync_callback,
+                on_chunk_complete=save_chunk_progress,
             )
             # Clear transcription progress after full success
             if source.extra_meta:
