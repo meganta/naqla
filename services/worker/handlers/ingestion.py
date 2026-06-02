@@ -144,7 +144,7 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
     def __init__(self, api_key: str) -> None:
         self.api_key = api_key
 
-    def transcribe(
+    async def transcribe(
         self,
         file_bytes: bytes,
         source_type: str,
