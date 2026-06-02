@@ -36,9 +36,19 @@ async def handle_ingestion_task(request: Request):
     session_factory = async_sessionmaker(bind=engine, expire_on_commit=False)
 
     async def mark_failed(msg: str) -> None:
-        """Mark job and source as failed in a fresh DB session."""
+        """Mark job and source as failed in a fresh DB session. Skips if source already processed."""
         try:
+            from sqlalchemy import select as sa_select
             async with session_factory() as db_fail:
+                result = await db_fail.execute(
+                    sa_select(KnowledgeSource.status).where(KnowledgeSource.id == source_id)
+                )
+                current_status = result.scalar_one_or_none()
+                if current_status == "processed":
+                    logger.info(
+                        "Skipping mark_failed for job=%s: source already processed", job_id
+                    )
+                    return
                 await db_fail.execute(
                     update(IngestionJob)
                     .where(IngestionJob.id == job_id)
