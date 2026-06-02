@@ -147,6 +147,16 @@ async def list_sources(db: AsyncSession, tenant_id: str) -> list:
     error_map = {row[0]: row[1] for row in errors_result.fetchall()}
     for source in sources:
         source.error_message = error_map.get(source.id)
+        # is_resumable: failed audio/video with partial transcription progress saved
+        source.is_resumable = False
+        if source.status == "failed" and source.source_type in {"audio", "video"}:
+            if source.extra_meta:
+                try:
+                    meta = json.loads(source.extra_meta)
+                    if meta.get("transcription_progress"):
+                        source.is_resumable = True
+                except Exception:
+                    pass
     return sources
 
 

@@ -11,6 +11,47 @@ from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
+# Error classification for smart retry logic
+DEAD_ERROR_CODES = {
+    "insufficient_quota",
+    "billing_hard_limit_reached",
+    "invalid_api_key",
+    "account_deactivated",
+}
+DEAD_ERROR_MESSAGES = [
+    "exceeded your current quota",
+    "billing",
+    "invalid api key",
+    "deactivated",
+    "unsupported file",
+    "invalid file format",
+]
+
+def classify_error(e: Exception) -> str:
+    """Returns 'dead' or 'retryable'."""
+    err_str = str(e).lower()
+    if hasattr(e, "code") and e.code in DEAD_ERROR_CODES:
+        return "dead"
+    for msg in DEAD_ERROR_MESSAGES:
+        if msg in err_str:
+            return "dead"
+    return "retryable"
+
+def format_user_error(e: Exception, error_type: str) -> str:
+    """Returns a clear Arabic error message for the teacher."""
+    err_str = str(e).lower()
+    if "exceeded your current quota" in err_str or "billing" in err_str:
+        return "انتهت حصة الذكاء الاصطناعي. يرجى التواصل مع الدعم الفني."
+    if "invalid api key" in err_str:
+        return "مفتاح API غير صالح. يرجى التواصل مع الدعم الفني."
+    if "unsupported" in err_str or "invalid file format" in err_str:
+        return "صيغة الملف غير مدعومة. يرجى رفع ملف بصيغة MP4 أو MP3."
+    if "no content" in err_str or "produced no content" in err_str:
+        return "لم يتم العثور على محتوى صوتي في الملف. تأكد أن الملف يحتوي على صوت واضح."
+    if error_type == "retryable":
+        return f"حدث خطأ مؤقت أثناء المعالجة. يمكنك إعادة المحاولة. ({str(e)[:100]})"
+    return f"فشلت المعالجة: {str(e)[:200]}"
+
 
 # ---------------------------------------------------------------------------
 # Embeddings
@@ -103,7 +144,18 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
     def __init__(self, api_key: str) -> None:
         self.api_key = api_key
 
-    def transcribe(self, file_bytes: bytes, source_type: str) -> list[dict]:
+    def transcribe(
+        self,
+        file_bytes: bytes,
+        source_type: str,
+        completed_chunks: list[dict] | None = None,
+        on_chunk_complete: callable | None = None,
+    ) -> list[dict]:
+        """
+        Transcribe audio/video file using Whisper.
+        - completed_chunks: previously saved segments from a prior partial run (for resume)
+        - on_chunk_complete: callback(chunk_index, segments) called after each chunk succeeds
+        """
         import openai
         import subprocess
         client = openai.OpenAI(api_key=self.api_key)
@@ -113,7 +165,7 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
             tmp.write(file_bytes)
             tmp_path = tmp.name
         try:
-            # Extract audio as mp3 using ffmpeg (reduces size significantly)
+            # Extract audio as mp3 using ffmpeg
             audio_path = tmp_path + ".mp3"
             subprocess.run(
                 ["ffmpeg", "-i", tmp_path, "-vn", "-acodec", "libmp3lame",
@@ -149,10 +201,26 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
                     chunk_paths.append(chunk_path)
                     chunk_offsets.append(start)
                 os.unlink(audio_path)
-            # Transcribe each chunk
+            total_chunks = len(chunk_paths)
+            logger.info("Transcribing %d audio chunk(s) with Whisper", total_chunks)
+            # Build map of already completed chunks (for resume)
+            completed_map: dict[int, list[dict]] = {}
+            if completed_chunks:
+                for item in completed_chunks:
+                    completed_map[item["chunk_index"]] = item["segments"]
+                logger.info(
+                    "Resuming transcription: %d/%d chunks already done",
+                    len(completed_map), total_chunks
+                )
             all_segments = []
             try:
-                for chunk_path, offset in zip(chunk_paths, chunk_offsets):
+                for idx, (chunk_path, offset) in enumerate(zip(chunk_paths, chunk_offsets)):
+                    # Resume: skip already completed chunks
+                    if idx in completed_map:
+                        logger.info("Skipping chunk %d/%d (already transcribed)", idx + 1, total_chunks)
+                        all_segments.extend(completed_map[idx])
+                        continue
+                    logger.info("Transcribing chunk %d/%d (offset=%.1fs)", idx + 1, total_chunks, offset)
                     with open(chunk_path, "rb") as audio_file:
                         response = client.audio.transcriptions.create(
                             model="whisper-1",
@@ -161,18 +229,26 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
                             response_format="verbose_json",
                             timestamp_granularities=["segment"],
                         )
+                    chunk_segments = []
                     for seg in (response.segments or []):
-                        all_segments.append({
+                        chunk_segments.append({
                             "text": seg.text.strip(),
                             "start": _seconds_to_time(seg.start + offset),
                             "end": _seconds_to_time(seg.end + offset),
                         })
-                    if not (response.segments or []) and response.text:
-                        all_segments.append({
+                    if not chunk_segments and response.text:
+                        chunk_segments.append({
                             "text": response.text.strip(),
                             "start": _seconds_to_time(offset),
                             "end": _seconds_to_time(offset),
                         })
+                    all_segments.extend(chunk_segments)
+                    logger.info(
+                        "Chunk %d/%d done: %d segments", idx + 1, total_chunks, len(chunk_segments)
+                    )
+                    # Save progress via callback
+                    if on_chunk_complete:
+                        on_chunk_complete(idx, chunk_segments)
             finally:
                 for p in chunk_paths:
                     if os.path.exists(p):
@@ -183,6 +259,7 @@ class WhisperTranscriptionProvider(TranscriptionProvider):
             raise
         if not all_segments:
             raise ValueError("Whisper transcription produced no content.")
+        logger.info("Transcription complete: %d total segments", len(all_segments))
         return all_segments
 
 
@@ -679,11 +756,57 @@ async def process_ingestion_job(
                     f"No file uploaded for {source.source_type} source. "
                     "Upload the file first and call confirm-upload."
                 )
+            # Load resume progress from extra_meta
+            completed_chunks = None
+            if source.extra_meta:
+                try:
+                    meta = json.loads(source.extra_meta)
+                    if meta.get("transcription_progress"):
+                        completed_chunks = meta["transcription_progress"]
+                        logger.info(
+                            "Found %d previously completed chunks for source %s",
+                            len(completed_chunks), source_id
+                        )
+                except Exception:
+                    pass
             file_bytes = download_file(bucket_name, source.file_path)
             provider = get_transcription_provider(
                 source.source_type, settings.openai_api_key
             )
-            segments = provider.transcribe(file_bytes, source.source_type)
+            # Callback to save progress after each chunk
+            async def save_chunk_progress(chunk_index: int, chunk_segments: list[dict]) -> None:
+                try:
+                    existing_meta = {}
+                    if source.extra_meta:
+                        existing_meta = json.loads(source.extra_meta)
+                    progress = existing_meta.get("transcription_progress", [])
+                    progress.append({"chunk_index": chunk_index, "segments": chunk_segments})
+                    existing_meta["transcription_progress"] = progress
+                    source.extra_meta = json.dumps(existing_meta, ensure_ascii=False)
+                    source.updated_at = datetime.utcnow()
+                    await db.flush()
+                    logger.info("Saved progress for chunk %d", chunk_index)
+                except Exception as e:
+                    logger.warning("Failed to save chunk progress: %s", e)
+            def sync_callback(chunk_index: int, chunk_segments: list[dict]) -> None:
+                import asyncio
+                asyncio.get_event_loop().run_until_complete(
+                    save_chunk_progress(chunk_index, chunk_segments)
+                )
+            segments = provider.transcribe(
+                file_bytes,
+                source.source_type,
+                completed_chunks=completed_chunks,
+                on_chunk_complete=sync_callback,
+            )
+            # Clear transcription progress after full success
+            if source.extra_meta:
+                try:
+                    meta = json.loads(source.extra_meta)
+                    meta.pop("transcription_progress", None)
+                    source.extra_meta = json.dumps(meta, ensure_ascii=False) if meta else None
+                except Exception:
+                    pass
             base_meta = {
                 "source_type": source.source_type,
                 "file_path": source.file_path,

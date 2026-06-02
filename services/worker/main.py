@@ -50,8 +50,36 @@ async def handle_ingestion_task(request: Request):
             await db.rollback()
             import traceback
             import logging
+            from handlers.ingestion import classify_error, format_user_error
+            error_type = classify_error(e)
             logging.getLogger("worker").error(
-                "Unhandled error in ingestion task: %s\n%s",
-                str(e), traceback.format_exc()
+                "Ingestion task failed [%s] job=%s source=%s: %s\n%s",
+                error_type, job_id, source_id, str(e), traceback.format_exc()
             )
+            if error_type == "dead":
+                try:
+                    from sqlalchemy.ext.asyncio import async_sessionmaker
+                    from sqlalchemy import update
+                    from ingestion_models import IngestionJob, KnowledgeSource
+                    from datetime import datetime
+                    session_factory2 = async_sessionmaker(bind=engine, expire_on_commit=False)
+                    user_msg = format_user_error(e, error_type)
+                    async with session_factory2() as db2:
+                        await db2.execute(
+                            update(IngestionJob)
+                            .where(IngestionJob.id == job_id)
+                            .values(status="failed", error_message=user_msg)
+                        )
+                        await db2.execute(
+                            update(KnowledgeSource)
+                            .where(KnowledgeSource.id == source_id)
+                            .values(status="failed", updated_at=datetime.utcnow())
+                        )
+                        await db2.commit()
+                    logging.getLogger("worker").info(
+                        "Dead error handled for job=%s: %s", job_id, user_msg
+                    )
+                except Exception as db_err:
+                    logging.getLogger("worker").error("Failed to mark dead error: %s", db_err)
+                return {"status": "dead_error", "detail": format_user_error(e, error_type)}
             raise HTTPException(status_code=500, detail=str(e)) from e

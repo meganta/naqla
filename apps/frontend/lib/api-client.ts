@@ -29,6 +29,7 @@ export interface SourceRecord {
   original_url: string | null;
   file_path: string | null;
   error_message: string | null;
+  is_resumable?: boolean;
   created_at: string;
 }
 

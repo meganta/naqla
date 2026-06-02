@@ -19,6 +19,7 @@ class SourceResponse(BaseModel):
     original_url: str | None
     extra_meta: str | None
     error_message: str | None = None
+    is_resumable: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

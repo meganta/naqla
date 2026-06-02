@@ -412,10 +412,13 @@ export default function KnowledgePage() {
                             console.error("retry error", e);
                           }
                         }}
-                        className="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1
-                          rounded hover:bg-indigo-50 transition-colors"
+                        className={`text-xs px-2 py-1 rounded transition-colors ${
+                          source.is_resumable
+                            ? "text-green-600 hover:text-green-800 hover:bg-green-50"
+                            : "text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50"
+                        }`}
                       >
-                        إعادة المحاولة
+                        {source.is_resumable ? "استئناف" : "إعادة المحاولة"}
                       </button>
                     )}
                     <button
