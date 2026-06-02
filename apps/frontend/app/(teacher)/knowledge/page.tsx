@@ -81,14 +81,14 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     sources.forEach((s) => {
-      if (s.status === "processing" && !processingStartTimes.current[s.id]) {
+      if (["processing", "uploaded"].includes(s.status) && !processingStartTimes.current[s.id]) {
         processingStartTimes.current[s.id] = Date.now();
       }
-      if (s.status !== "processing") {
+      if (!["processing", "uploaded"].includes(s.status)) {
         delete processingStartTimes.current[s.id];
       }
     });
-    const hasProcessing = sources.some((s) => s.status === "processing");
+    const hasProcessing = sources.some((s) => ["processing", "uploaded"].includes(s.status));
     if (!hasProcessing) return;
     const timer = setInterval(() => {
       const times: Record<string, number> = {};
@@ -128,7 +128,7 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     fetchSources();
-    const interval = setInterval(fetchSources, hasActiveSources ? 1000 : 5000);
+    const interval = setInterval(fetchSources, hasActiveSources ? 1000 : 10000);
     return () => clearInterval(interval);
   }, [fetchSources, hasActiveSources]);
 
