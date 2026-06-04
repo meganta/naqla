@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,36 +26,52 @@ async def embed_query(query: str) -> list[float] | None:
         return None
 
 
+SIMILARITY_THRESHOLD = 0.55  # cosine distance — lower = more similar
+CANDIDATE_LIMIT = 20        # fetch this many, then filter
+MAX_CHUNKS_RETURNED = 8     # return at most this many after filtering
+
+logger = logging.getLogger(__name__)
+
+
 async def retrieve_chunks(
     db: AsyncSession,
     tenant_id: str,
     query: str,
     scope: SourceScope,
-    limit: int = 5,
+    limit: int = MAX_CHUNKS_RETURNED,
 ) -> list[KnowledgeChunk]:
     if scope == SourceScope.OFFICIAL_CURRICULUM:
         return []
 
-    # Try vector similarity search first
+    # Try vector similarity search with threshold filtering
     query_embedding = await embed_query(query)
     if query_embedding is not None:
         try:
             embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
             result = await db.execute(
                 text("""
-                    SELECT id FROM knowledge_chunks
+                    SELECT id, (embedding <=> CAST(:embedding AS vector)) AS distance
+                    FROM knowledge_chunks
                     WHERE tenant_id = :tenant_id
                     AND embedding IS NOT NULL
-                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                    ORDER BY distance
                     LIMIT :limit
                 """),
                 {
                     "tenant_id": tenant_id,
                     "embedding": embedding_str,
-                    "limit": limit,
+                    "limit": CANDIDATE_LIMIT,
                 }
             )
-            ids = [row[0] for row in result.fetchall()]
+            rows = result.fetchall()
+            filtered = [(row[0], row[1]) for row in rows if row[1] <= SIMILARITY_THRESHOLD]
+            logger.info(
+                "retrieve_chunks: query=%r candidates=%d filtered=%d threshold=%s",
+                query[:80], len(rows), len(filtered), SIMILARITY_THRESHOLD,
+            )
+            for chunk_id, dist in filtered[:MAX_CHUNKS_RETURNED]:
+                logger.info("  chunk=%s distance=%.4f", chunk_id, dist)
+            ids = [row[0] for row in filtered[:MAX_CHUNKS_RETURNED]]
             if ids:
                 chunks_result = await db.execute(
                     select(KnowledgeChunk).where(KnowledgeChunk.id.in_(ids))
@@ -62,10 +80,12 @@ async def retrieve_chunks(
                 id_order = {id_: i for i, id_ in enumerate(ids)}
                 chunks.sort(key=lambda c: id_order.get(c.id, 999))
                 return chunks
-        except Exception:
-            pass
+            logger.warning("retrieve_chunks: no chunks passed threshold for query=%r", query[:80])
+        except Exception as e:
+            logger.error("retrieve_chunks vector search failed: %s", e)
 
     # Fallback to recency
+    logger.warning("retrieve_chunks: falling back to recency for tenant=%s", tenant_id)
     stmt = (
         select(KnowledgeChunk)
         .where(KnowledgeChunk.tenant_id == tenant_id)
