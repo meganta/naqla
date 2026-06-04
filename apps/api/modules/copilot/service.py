@@ -48,11 +48,22 @@ async def retrieve_chunks(
     if query_embedding is not None:
         try:
             embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
-            # Extract keywords from query (words > 3 chars)
-            keywords = [w.strip() for w in query.split() if len(w.strip()) > 3]
-            title_filter = " OR ".join(
-                f"ks.title ILIKE :kw{i}" for i in range(len(keywords))
-            ) if keywords else "FALSE"
+            # Extract keywords from query (words > 4 chars, skip stop words)
+            STOP_WORDS = {"ماهي", "ماهو", "ما هي", "ما هو", "هي", "هو", "في", "من", "على",
+                          "عن", "مع", "إلى", "الى", "كيف", "لماذا", "متى", "اين", "أين"}
+            keywords = [
+                w.strip() for w in query.split()
+                if len(w.strip()) > 4 and w.strip() not in STOP_WORDS
+            ]
+            # Title boost: ALL keywords must match (AND logic) for stronger relevance signal
+            if len(keywords) >= 2:
+                title_filter = " AND ".join(
+                    f"ks.title ILIKE :kw{i}" for i in range(len(keywords))
+                )
+            elif keywords:
+                title_filter = "ks.title ILIKE :kw0"
+            else:
+                title_filter = "FALSE"
             kw_params = {f"kw{i}": f"%{kw}%" for i, kw in enumerate(keywords)}
             result = await db.execute(
                 text(f"""
