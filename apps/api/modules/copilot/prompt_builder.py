@@ -178,10 +178,11 @@ def build_system_prompt(ctx: TenantContextPackage) -> str:
         "## Response Formatting\n"
         "- Use Markdown formatting\n"
         "- Use headings, bullet points, and numbered lists to organize content\n"
-        "- When citing a video chunk you actually used, format it as:\n"
+        "- When citing a video chunk, you MUST use this exact format — both lines together:\n"
         "  📍 **[Video Title]** — from `MM:SS` to `MM:SS`\n"
-        "- Include a YouTube link ONLY if the chunk was a direct source:\n"
         "  [▶️ شاهد المقطع](https://www.youtube.com/watch?v=VIDEO_ID&t=SECONDS)\n"
+        "  Never show a timestamp without its link.\n"
+        "  Never show a link without its timestamp.\n"
         "- For text/file sources, mention the source title only\n"
         "- Mark all general knowledge statements with [معلومة عامة]"
     )

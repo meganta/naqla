@@ -204,13 +204,17 @@ export default function CopilotPage() {
                 </ReactMarkdown>
               )}
               </div>
-              {/* Sources used */}
-              {msg.sources && msg.sources.length > 0 && (
+              {/* Sources used — only show sources cited in the answer */}
+              {msg.sources && msg.sources.filter(
+                s => msg.content.includes(s.source_title)
+              ).length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1 justify-end">
-                  {msg.sources.map((s, j) => (
+                  {msg.sources.filter(
+                    s => msg.content.includes(s.source_title)
+                  ).map((s, j) => (
                     <span key={j}
                       className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">
-                      📚 {s.source_title} ({s.chunk_count} مقطع)
+                      📚 {s.source_title}
                     </span>
                   ))}
                 </div>
