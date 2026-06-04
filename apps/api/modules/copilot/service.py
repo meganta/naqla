@@ -26,7 +26,7 @@ async def embed_query(query: str) -> list[float] | None:
         return None
 
 
-SIMILARITY_THRESHOLD = 0.85  # cosine distance — lower = more similar
+SIMILARITY_THRESHOLD = 0.99  # cosine distance — lower = more similar
 CANDIDATE_LIMIT = 20        # fetch this many, then filter
 MAX_CHUNKS_RETURNED = 8     # return at most this many after filtering
 
