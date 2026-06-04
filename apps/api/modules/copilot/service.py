@@ -116,7 +116,7 @@ async def run_copilot(
     scope: SourceScope,
     task_type: str = "answer_question",
     max_tokens: int = 2000,
-    temperature: float = 0.7,
+    temperature: float = 0.3,
 ):
     from modules.settings.service import get_tenant_settings
 
