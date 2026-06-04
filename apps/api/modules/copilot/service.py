@@ -72,15 +72,39 @@ async def retrieve_chunks(
             )
             for chunk_id, dist in filtered[:MAX_CHUNKS_RETURNED]:
                 logger.info("  chunk=%s distance=%.4f", chunk_id, dist)
-            ids = [row[0] for row in filtered[:MAX_CHUNKS_RETURNED]]
+            # Deduplicate: max 2 chunks per source, preserve similarity order
+            deduped = []
+            for chunk_id, dist in filtered:
+                # We need source_id — fetch minimally after dedup
+                deduped.append((chunk_id, dist))
+                if len(deduped) >= MAX_CHUNKS_RETURNED * 3:
+                    break
+
+            ids = [row[0] for row in deduped[:MAX_CHUNKS_RETURNED * 3]]
             if ids:
                 chunks_result = await db.execute(
                     select(KnowledgeChunk).where(KnowledgeChunk.id.in_(ids))
                 )
-                chunks = list(chunks_result.scalars().all())
+                all_chunks = list(chunks_result.scalars().all())
                 id_order = {id_: i for i, id_ in enumerate(ids)}
-                chunks.sort(key=lambda c: id_order.get(c.id, 999))
-                return chunks
+                all_chunks.sort(key=lambda c: id_order.get(c.id, 999))
+
+                # Apply per-source deduplication (max 2 per source)
+                source_count: dict[str, int] = {}
+                final_chunks = []
+                for c in all_chunks:
+                    count = source_count.get(c.source_id, 0)
+                    if count < 2:
+                        final_chunks.append(c)
+                        source_count[c.source_id] = count + 1
+                    if len(final_chunks) >= MAX_CHUNKS_RETURNED:
+                        break
+
+                logger.info(
+                    "retrieve_chunks: returning %d chunks from %d sources",
+                    len(final_chunks), len(source_count),
+                )
+                return final_chunks
             logger.warning("retrieve_chunks: no chunks passed threshold for query=%r", query[:80])
         except Exception as e:
             logger.error("retrieve_chunks vector search failed: %s", e)
