@@ -13,6 +13,7 @@ from providers.ai_provider.base import AIMessage, AIProvider, SourceScope
 async def embed_query(query: str) -> list[float] | None:
     """Generate embedding for a query using OpenAI."""
     if not settings.openai_api_key:
+        logger.error("embed_query: openai_api_key is not set")
         return None
     try:
         import openai
@@ -21,8 +22,10 @@ async def embed_query(query: str) -> list[float] | None:
             model="text-embedding-3-small",
             input=[query],
         )
+        logger.info("embed_query: success, vector length=%d", len(response.data[0].embedding))
         return response.data[0].embedding
-    except Exception:
+    except Exception as e:
+        logger.error("embed_query: failed with error: %s", e)
         return None
 
 
