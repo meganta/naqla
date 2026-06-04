@@ -54,6 +54,7 @@ async def retrieve_chunks(
                     FROM knowledge_chunks
                     WHERE tenant_id = :tenant_id
                     AND embedding IS NOT NULL
+                    AND chunk_index > 0
                     ORDER BY distance
                     LIMIT :limit
                 """),
