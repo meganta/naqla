@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +10,8 @@ from modules.auth.router import router as auth_router
 from modules.copilot.router import router as copilot_router
 from modules.ingestion.router import router as ingestion_router
 from modules.settings.router import router as settings_router
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
