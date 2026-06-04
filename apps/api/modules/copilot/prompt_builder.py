@@ -142,13 +142,17 @@ def build_system_prompt(ctx: TenantContextPackage) -> str:
         )
         sections.append(
             "## Retrieved Knowledge Chunks\n"
-            "Read all chunks and use them to inform your answer.\n"
-            "- Use every chunk that is relevant to the question.\n"
-            "- You MUST cite every chunk you used: include source title, "
-            "timestamp, and video link at the end of your answer.\n"
-            "- Skip only chunks that are completely unrelated to the question.\n"
-            "- If NO chunk is relevant → tell the teacher, "
-            "then answer from general knowledge and label each statement with [معلومة عامة].\n\n"
+            "These chunks are colloquial Arabic transcripts from the teacher's videos. "
+            "They contain real educational content in spoken form.\n"
+            "Your instructions:\n"
+            "1. Read each chunk and identify content relevant to the question.\n"
+            "2. Rewrite ONLY what is in the chunk into clear formal Arabic — "
+            "do NOT add any information not present in the chunk text.\n"
+            "3. Stay strictly faithful to the chunk — same concepts, same points, "
+            "just reformatted. If a concept is not in the chunk, do not include it.\n"
+            "4. Cite every chunk you used with source title, timestamp and video link.\n"
+            "5. Only if chunks contain ZERO relevant content, say so and answer "
+            "from general knowledge labeling each statement with [معلومة عامة].\n\n"
             f"{chunk_texts}"
         )
     else:
