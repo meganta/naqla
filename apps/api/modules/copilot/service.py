@@ -26,7 +26,7 @@ async def embed_query(query: str) -> list[float] | None:
         return None
 
 
-SIMILARITY_THRESHOLD = 0.55  # cosine distance — lower = more similar
+SIMILARITY_THRESHOLD = 0.75  # cosine distance — lower = more similar
 CANDIDATE_LIMIT = 20        # fetch this many, then filter
 MAX_CHUNKS_RETURNED = 8     # return at most this many after filtering
 
@@ -84,16 +84,9 @@ async def retrieve_chunks(
         except Exception as e:
             logger.error("retrieve_chunks vector search failed: %s", e)
 
-    # Fallback to recency
-    logger.warning("retrieve_chunks: falling back to recency for tenant=%s", tenant_id)
-    stmt = (
-        select(KnowledgeChunk)
-        .where(KnowledgeChunk.tenant_id == tenant_id)
-        .order_by(KnowledgeChunk.created_at.desc())
-        .limit(limit)
-    )
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    # No embedding available — return empty rather than irrelevant recency results
+    logger.warning("retrieve_chunks: no embedding, returning empty for tenant=%s", tenant_id)
+    return []
 
 
 async def get_source_titles(
