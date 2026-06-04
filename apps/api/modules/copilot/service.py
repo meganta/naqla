@@ -43,25 +43,36 @@ async def retrieve_chunks(
     if scope == SourceScope.OFFICIAL_CURRICULUM:
         return []
 
-    # Try vector similarity search with threshold filtering
+    # Try hybrid search: vector similarity + title keyword boost
     query_embedding = await embed_query(query)
     if query_embedding is not None:
         try:
             embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+            # Extract keywords from query (words > 3 chars)
+            keywords = [w.strip() for w in query.split() if len(w.strip()) > 3]
+            title_filter = " OR ".join(
+                f"ks.title ILIKE :kw{i}" for i in range(len(keywords))
+            ) if keywords else "FALSE"
+            kw_params = {f"kw{i}": f"%{kw}%" for i, kw in enumerate(keywords)}
             result = await db.execute(
-                text("""
-                    SELECT id, (embedding <=> CAST(:embedding AS vector)) AS distance
-                    FROM knowledge_chunks
-                    WHERE tenant_id = :tenant_id
-                    AND embedding IS NOT NULL
-                    AND chunk_index > 0
-                    ORDER BY distance
+                text(f"""
+                    SELECT kc.id,
+                        (kc.embedding <=> CAST(:embedding AS vector)) AS distance,
+                        CASE WHEN ({title_filter}) THEN 0.15 ELSE 0 END AS title_boost
+                    FROM knowledge_chunks kc
+                    JOIN knowledge_sources ks ON ks.id = kc.source_id
+                    WHERE kc.tenant_id = :tenant_id
+                    AND kc.embedding IS NOT NULL
+                    AND kc.chunk_index > 0
+                    ORDER BY (kc.embedding <=> CAST(:embedding AS vector))
+                        - (CASE WHEN ({title_filter}) THEN 0.15 ELSE 0 END)
                     LIMIT :limit
                 """),
                 {
                     "tenant_id": tenant_id,
                     "embedding": embedding_str,
                     "limit": CANDIDATE_LIMIT,
+                    **kw_params,
                 }
             )
             rows = result.fetchall()
