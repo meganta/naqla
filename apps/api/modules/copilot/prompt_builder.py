@@ -18,9 +18,10 @@ SOURCE_SCOPE_RULES = {
     "teacher_kb": (
         "Use ONLY the retrieved chunks from the teacher knowledge base. "
         "If the chunks contain a direct answer, use it and cite the source. "
-        "If the chunks do not contain sufficient information, explicitly tell the teacher first, "
-        "then you may supplement with your general expertise — but label every such statement "
-        "with [معلومة عامة] so the teacher knows it did not come from their content. "
+        "If the chunks do not contain sufficient information, you MUST start your response "
+        "with the Arabic phrase: '⚠️ لم أجد إجابة كافية في قاعدة معرفتك.' "
+        "Then you may add general knowledge but MUST prefix EVERY sentence with [معلومة عامة]. "
+        "Never write a full answer without this warning when chunks are insufficient. "
         "Never present general knowledge as if it came from the teacher's materials."
     ),
     "official_curriculum": (

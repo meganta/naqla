@@ -208,15 +208,19 @@ export default function CopilotPage() {
               {msg.sources && msg.sources.filter(
                 s => msg.content.includes(s.source_title)
               ).length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1 justify-end">
-                  {msg.sources.filter(
-                    s => msg.content.includes(s.source_title)
-                  ).map((s, j) => (
-                    <span key={j}
-                      className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">
-                      📚 {s.source_title}
-                    </span>
-                  ))}
+                <div className="mt-2 border-t border-indigo-100 pt-2">
+                  <p className="text-xs text-gray-400 mb-1 text-right">📖 المصادر المستخدمة:</p>
+                  <div className="flex flex-wrap gap-1 justify-end">
+                    {msg.sources.filter(
+                      s => msg.content.includes(s.source_title)
+                    ).map((s, j) => (
+                      <span key={j}
+                        className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200
+                          px-2 py-0.5 rounded-full font-medium">
+                        📚 {s.source_title}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               {/* Insufficient context */}
