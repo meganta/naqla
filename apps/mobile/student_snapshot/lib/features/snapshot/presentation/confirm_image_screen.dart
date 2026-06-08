@@ -23,6 +23,9 @@ class ConfirmImageScreen extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final isLoading = provider.state == SnapshotState.uploading ||
+        provider.state == SnapshotState.processing;
+
     return Scaffold(
       appBar: AppBar(title: const Text('تأكيد الصورة')),
       body: Column(
@@ -36,13 +39,27 @@ class ConfirmImageScreen extends StatelessWidget {
               ),
             ),
           ),
+          if (isLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                children: [
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 8),
+                  Text(
+                    provider.statusLabel,
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: isLoading ? null : () => Navigator.pop(context),
                     icon: const Icon(Icons.refresh),
                     label: const Text('إعادة التقاط'),
                   ),
@@ -50,7 +67,7 @@ class ConfirmImageScreen extends StatelessWidget {
                 const SizedBox(width: 16),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: provider.state == SnapshotState.loading
+                    onPressed: isLoading
                         ? null
                         : () async {
                             await provider.submitSnapshot(
@@ -58,13 +75,15 @@ class ConfirmImageScreen extends StatelessWidget {
                               studentId: studentId.isEmpty ? null : studentId,
                             );
                             if (!context.mounted) return;
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const ResultScreen(),
-                              ),
-                            );
+                            if (provider.state == SnapshotState.success) {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const ResultScreen(),
+                                ),
+                              );
+                            }
                           },
-                    icon: provider.state == SnapshotState.loading
+                    icon: isLoading
                         ? const SizedBox(
                             height: 18,
                             width: 18,

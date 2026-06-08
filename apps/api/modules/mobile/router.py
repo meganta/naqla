@@ -1,11 +1,18 @@
 import logging
+from datetime import timedelta
 from uuid import uuid4
 
+import google.auth
+import google.auth.transport.requests
 from fastapi import APIRouter, Depends, HTTPException, status
+from google.auth import impersonated_credentials
+from google.cloud import storage
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.ai import get_ai_provider
+from core.config import settings
 from core.database import get_db
 from modules.ingestion.models import KnowledgeChunk, KnowledgeSource
 from modules.mobile.evidence_builder import (
@@ -24,6 +31,63 @@ from modules.mobile.snapshot_service import process_snapshot
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mobile", tags=["mobile"])
+
+
+class ImageUploadUrlRequest(BaseModel):
+    tenant_id: str
+
+
+class ImageUploadUrlResponse(BaseModel):
+    upload_url: str
+    image_ref: str  # gs:// path to pass back in snapshot-questions
+
+
+@router.post("/image-upload-url", response_model=ImageUploadUrlResponse)
+async def get_image_upload_url(payload: ImageUploadUrlRequest):
+    """
+    Return a signed GCS PUT URL for the mobile app to upload a snapshot image.
+    The app then passes image_ref back in POST /mobile/snapshot-questions.
+    """
+    if not payload.tenant_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="tenant_id is required")
+    try:
+        file_id = uuid4().hex
+        file_path = f"snapshots/{payload.tenant_id}/{file_id}.jpg"
+
+        credentials, _ = google.auth.default()
+        auth_request = google.auth.transport.requests.Request()
+        credentials.refresh(auth_request)
+
+        service_account_email = (
+            f"naqla-api-sa@{settings.gcp_project_id}.iam.gserviceaccount.com"
+        )
+        signing_credentials = impersonated_credentials.Credentials(
+            source_credentials=credentials,
+            target_principal=service_account_email,
+            target_scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+            lifetime=300,
+        )
+        client = storage.Client(credentials=signing_credentials)
+        bucket = client.bucket(settings.gcs_bucket_name)
+        blob = bucket.blob(file_path)
+        upload_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=15),
+            method="PUT",
+            content_type="image/jpeg",
+            credentials=signing_credentials,
+        )
+        return ImageUploadUrlResponse(
+            upload_url=upload_url,
+            image_ref=f"gs://{settings.gcs_bucket_name}/{file_path}",
+        )
+    except Exception as e:
+        logger.error("get_image_upload_url failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="تعذّر إنشاء رابط الرفع. يرجى المحاولة مجدداً.",
+        ) from e
 
 
 @router.post(

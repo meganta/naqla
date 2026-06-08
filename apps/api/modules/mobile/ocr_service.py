@@ -1,27 +1,34 @@
 """
-OCR service abstraction.
-Default provider: stub (returns empty text, for testing pass ocr_override).
-TODO: replace StubOCRProvider with a real Arabic-capable OCR provider
-      e.g. Google Vision API or Azure Computer Vision.
+OCR service — GPT-4o vision provider for Arabic text extraction.
+Falls back to StubOCRProvider if no OpenAI key is configured.
 """
+import base64
 import logging
 import re
 import unicodedata
 
+import httpx
+import openai
+
+from core.config import settings
+
 logger = logging.getLogger(__name__)
+
+OCR_SYSTEM_PROMPT = (
+    "You are an Arabic OCR engine. "
+    "Extract ALL Arabic text from the image exactly as it appears. "
+    "Output ONLY the extracted text — no explanations, no translations, no commentary. "
+    "Preserve line breaks between questions. "
+    "If the image contains no readable Arabic text, output exactly: [NO_TEXT]"
+)
 
 
 def normalize_arabic(text: str) -> str:
     """Normalize Arabic text: strip diacritics, normalize alef variants, fix spacing."""
-    # Remove Arabic diacritics (tashkeel)
     text = re.sub(r'[\u064B-\u065F\u0670]', '', text)
-    # Normalize alef variants to plain alef
     text = re.sub(r'[إأآا]', 'ا', text)
-    # Normalize teh marbuta
     text = re.sub(r'ة', 'ه', text)
-    # Normalize whitespace
     text = re.sub(r'\s+', ' ', text).strip()
-    # NFC normalization
     text = unicodedata.normalize('NFC', text)
     return text
 
@@ -46,26 +53,89 @@ class BaseOCRProvider:
         raise NotImplementedError
 
 
-class StubOCRProvider(BaseOCRProvider):
+class GPT4oOCRProvider(BaseOCRProvider):
     """
-    Stub OCR provider — always returns empty text.
-    Use ocr_override in the request to inject text during development/testing.
-    TODO: replace with a real Arabic OCR provider.
+    OCR via GPT-4o vision. Accepts:
+    - Public HTTPS image URLs (passed directly)
+    - GCS URLs starting with gs:// (downloaded and base64-encoded)
     """
+
+    def __init__(self, api_key: str) -> None:
+        self.client = openai.AsyncOpenAI(api_key=api_key)
+
+    async def _image_content(self, image_url: str) -> dict:
+        """Build the image content block for the GPT-4o API call."""
+        if image_url.startswith("gs://"):
+            # Download from GCS and encode as base64
+            # Strip gs://bucket/path -> https://storage.googleapis.com/bucket/path
+            public_url = image_url.replace(
+                "gs://", "https://storage.googleapis.com/", 1
+            )
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(public_url)
+                resp.raise_for_status()
+                b64 = base64.b64encode(resp.content).decode()
+            return {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "high"},
+            }
+        return {
+            "type": "image_url",
+            "image_url": {"url": image_url, "detail": "high"},
+        }
+
     async def extract_text(self, image_url: str) -> OCRResult:
-        logger.warning("StubOCRProvider: no real OCR configured, returning empty text")
+        logger.info("GPT4oOCRProvider: extracting text from image")
+        try:
+            image_block = await self._image_content(image_url)
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                max_tokens=1000,
+                temperature=0.0,
+                messages=[
+                    {"role": "system", "content": OCR_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            image_block,
+                            {"type": "text", "text": "استخرج النص العربي من الصورة."},
+                        ],
+                    },
+                ],
+            )
+            raw = response.choices[0].message.content or ""
+            raw = raw.strip()
+
+            if raw == "[NO_TEXT]" or not raw:
+                logger.warning("GPT4oOCRProvider: no text found in image")
+                return OCRResult(raw_text="", confidence=0.0, error="لم يُعثر على نص في الصورة")
+
+            logger.info("GPT4oOCRProvider: extracted %d chars", len(raw))
+            return OCRResult(raw_text=raw, confidence=0.9)
+
+        except openai.BadRequestError as e:
+            logger.error("GPT4oOCRProvider: bad request (image may be invalid): %s", e)
+            return OCRResult(
+                raw_text="", confidence=0.0,
+                error="تعذّر معالجة الصورة. يرجى التقاط صورة أوضح.",
+            )
+        except Exception as e:
+            logger.error("GPT4oOCRProvider: unexpected error: %s", e)
+            return OCRResult(
+                raw_text="", confidence=0.0,
+                error="حدث خطأ أثناء قراءة الصورة. يرجى المحاولة مجدداً.",
+            )
+
+
+class StubOCRProvider(BaseOCRProvider):
+    """Stub — use ocr_override in the request for testing."""
+    async def extract_text(self, image_url: str) -> OCRResult:
+        logger.warning("StubOCRProvider: no OCR key configured, returning empty")
         return OCRResult(raw_text="", confidence=0.0, error="OCR provider not configured")
 
 
-# TODO: implement GoogleVisionOCRProvider
-# class GoogleVisionOCRProvider(BaseOCRProvider):
-#     async def extract_text(self, image_url: str) -> OCRResult:
-#         ...
-
-
 def get_ocr_provider() -> BaseOCRProvider:
-    """
-    Factory — returns the configured OCR provider.
-    TODO: read from settings.ocr_provider once a real provider is implemented.
-    """
+    if settings.openai_api_key:
+        return GPT4oOCRProvider(api_key=settings.openai_api_key)
+    logger.warning("get_ocr_provider: OPENAI_API_KEY not set, using stub")
     return StubOCRProvider()
