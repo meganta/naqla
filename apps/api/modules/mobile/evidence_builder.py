@@ -7,7 +7,6 @@ to parsing extra_meta JSON.
 """
 import json
 import logging
-from uuid import uuid4
 
 from modules.ingestion.models import KnowledgeChunk, KnowledgeSource
 from modules.mobile.schemas import (

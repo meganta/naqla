@@ -3,8 +3,6 @@ Snapshot service.
 Orchestrates: OCR → question detection → chunk retrieval → answer generation → evidence mapping.
 """
 import logging
-from datetime import datetime
-from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

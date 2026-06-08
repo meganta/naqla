@@ -1,6 +1,4 @@
 """Tests for mobile module: OCR normalization, question detection, evidence mapping."""
-import pytest
-
 from modules.mobile.ocr_service import normalize_arabic
 from modules.mobile.question_detector import detect_questions
 

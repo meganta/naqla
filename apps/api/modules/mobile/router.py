@@ -2,11 +2,23 @@ import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.ai import get_ai_provider
 from core.database import get_db
-from modules.mobile.schemas import PlaybackResponse, SnapshotQuestionRequest, SnapshotQuestionResponse
+from modules.ingestion.models import KnowledgeChunk, KnowledgeSource
+from modules.mobile.evidence_builder import (
+    YOUTUBE_TYPES,
+    _get_int,
+    _get_str,
+    build_youtube_playback_url,
+)
+from modules.mobile.schemas import (
+    PlaybackResponse,
+    SnapshotQuestionRequest,
+    SnapshotQuestionResponse,
+)
 from modules.mobile.snapshot_service import process_snapshot
 
 logger = logging.getLogger(__name__)
@@ -72,12 +84,6 @@ async def get_evidence_playback(
 
     chunk_id = evidence_id[3:]
 
-    from sqlalchemy import select
-    from modules.ingestion.models import KnowledgeChunk, KnowledgeSource
-    from modules.mobile.evidence_builder import (
-        _get_int, _get_str, build_youtube_playback_url, YOUTUBE_TYPES
-    )
-
     result = await db.execute(
         select(KnowledgeChunk).where(KnowledgeChunk.id == chunk_id)
     )
@@ -89,7 +95,9 @@ async def get_evidence_playback(
         select(KnowledgeSource).where(KnowledgeSource.id == chunk.source_id)
     )
     source = source_result.scalar_one_or_none()
-    source_type = (chunk.source_type_tag or (source.source_type if source else "")) or "text"
+    source_type = (
+        chunk.source_type_tag or (source.source_type if source else "")
+    ) or "text"
 
     start_ms = _get_int(chunk, 'start_ms')
     end_ms = _get_int(chunk, 'end_ms')
