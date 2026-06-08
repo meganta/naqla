@@ -2,7 +2,6 @@
 from modules.mobile.ocr_service import normalize_arabic
 from modules.mobile.question_detector import detect_questions
 
-
 # ---------- OCR normalization ----------
 
 def test_normalize_strips_diacritics():

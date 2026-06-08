@@ -2,15 +2,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 # ---------- Request ----------
 
 class SnapshotQuestionRequest(BaseModel):
     tenant_id: str
     student_id: str | None = None
-    image_url: str | None = None          # GCS signed URL or public URL
-    image_ref: str | None = None          # internal GCS path alternative
-    ocr_override: str | None = None       # for testing: skip OCR and use this text
+    image_url: str | None = None
+    image_ref: str | None = None
+    ocr_override: str | None = None
     language: str = "ar"
     answer_mode: Literal["tenant_knowledge_only"] = "tenant_knowledge_only"
 
@@ -36,7 +35,7 @@ class MediaEvidence(EvidenceBase):
     source_type: Literal["audio", "video"]
     start_ms: int | None = None
     end_ms: int | None = None
-    playback_url: str | None = None       # signed GCS URL if available
+    playback_url: str | None = None
 
 
 class DocumentEvidence(EvidenceBase):
