@@ -64,24 +64,27 @@ class GPT4oOCRProvider(BaseOCRProvider):
         self.client = openai.AsyncOpenAI(api_key=api_key)
 
     async def _image_content(self, image_url: str) -> dict:
-        """Build the image content block for the GPT-4o API call."""
+        """
+        Always download and base64-encode — avoids OpenAI URL-fetch restrictions.
+        Supports public HTTPS URLs and gs:// GCS paths.
+        """
         if image_url.startswith("gs://"):
-            # Download from GCS and encode as base64
-            # Strip gs://bucket/path -> https://storage.googleapis.com/bucket/path
-            public_url = image_url.replace(
-                "gs://", "https://storage.googleapis.com/", 1
-            )
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(public_url)
-                resp.raise_for_status()
-                b64 = base64.b64encode(resp.content).decode()
-            return {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "high"},
-            }
+            fetch_url = image_url.replace("gs://", "https://storage.googleapis.com/", 1)
+        else:
+            fetch_url = image_url
+
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(fetch_url)
+            resp.raise_for_status()
+            b64 = base64.b64encode(resp.content).decode()
+
+        content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        if content_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+            content_type = "image/jpeg"
+
         return {
             "type": "image_url",
-            "image_url": {"url": image_url, "detail": "high"},
+            "image_url": {"url": f"data:{content_type};base64,{b64}", "detail": "high"},
         }
 
     async def extract_text(self, image_url: str) -> OCRResult:
