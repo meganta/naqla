@@ -15,11 +15,11 @@ from core.config import settings
 logger = logging.getLogger(__name__)
 
 OCR_SYSTEM_PROMPT = (
-    "You are an Arabic OCR engine. "
-    "Extract ALL Arabic text from the image exactly as it appears. "
+    "You are an OCR engine. "
+    "Extract ALL text from the image exactly as it appears, in any language. "
     "Output ONLY the extracted text — no explanations, no translations, no commentary. "
-    "Preserve line breaks between questions. "
-    "If the image contains no readable Arabic text, output exactly: [NO_TEXT]"
+    "Preserve line breaks between separate questions or paragraphs. "
+    "If the image contains no readable text at all, output exactly: [NO_TEXT]"
 )
 
 
@@ -101,7 +101,7 @@ class GPT4oOCRProvider(BaseOCRProvider):
                         "role": "user",
                         "content": [
                             image_block,
-                            {"type": "text", "text": "استخرج النص العربي من الصورة."},
+                            {"type": "text", "text": "استخرج كل النص الموجود في الصورة."},
                         ],
                     },
                 ],
