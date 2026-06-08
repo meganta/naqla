@@ -1,0 +1,41 @@
+name: student_snapshot
+description: Naqla Student Snapshot - AI-powered question answering from book photos.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # HTTP
+  http: ^1.2.1
+  # Image capture & crop
+  image_picker: ^1.1.2
+  image_cropper: ^7.0.0
+  # Secure storage
+  flutter_secure_storage: ^9.0.0
+  # State management
+  provider: ^6.1.2
+  # URL launcher (YouTube playback)
+  url_launcher: ^6.3.0
+  # Video/audio player for uploaded media evidence
+  video_player: ^2.8.6
+  # RTL text support (Arabic)
+  intl: ^0.19.0
+  # Environment config
+  flutter_dotenv: ^5.1.0
+  # Loading indicators
+  shimmer: ^3.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.9
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env

@@ -9,6 +9,7 @@ from modules.auth.google_oauth import router as google_oauth_router
 from modules.auth.router import router as auth_router
 from modules.copilot.router import router as copilot_router
 from modules.ingestion.router import router as ingestion_router
+from modules.mobile.router import router as mobile_router
 from modules.settings.router import router as settings_router
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,7 @@ app.include_router(google_oauth_router)
 app.include_router(ingestion_router)
 app.include_router(copilot_router)
 app.include_router(settings_router)
+app.include_router(mobile_router)
 
 
 @app.get("/health")

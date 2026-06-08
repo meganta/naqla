@@ -1,0 +1,92 @@
+name: mobile-deploy
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'apps/mobile/student_snapshot/**'
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Play Store track (internal / alpha / beta)'
+        required: false
+        default: 'internal'
+
+jobs:
+  build-and-deploy:
+    name: Build AAB and upload to Play Store
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: apps/mobile/student_snapshot
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: apps/mobile/student_snapshot
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        working-directory: apps/mobile/student_snapshot
+        run: flutter test
+
+      - name: Write .env
+        working-directory: apps/mobile/student_snapshot
+        run: |
+          echo "API_BASE_URL=${{ secrets.MOBILE_API_BASE_URL }}" > .env
+
+      - name: Decode keystore
+        working-directory: apps/mobile/student_snapshot/android
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/keystore.jks
+
+      - name: Compute version code
+        id: version
+        run: echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release AAB
+        working-directory: apps/mobile/student_snapshot
+        env:
+          ANDROID_KEYSTORE_PATH: keystore.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build appbundle --release \
+            --build-number=${{ steps.version.outputs.code }}
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: naqla-student-${{ github.sha }}.aab
+          path: apps/mobile/student_snapshot/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 14
+
+      - name: Upload to Play Store internal testing
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.naqla.student_snapshot
+          releaseFiles: apps/mobile/student_snapshot/build/app/outputs/bundle/release/app-release.aab
+          track: ${{ github.event.inputs.track || 'internal' }}
+          status: completed
+
+      - name: Clean keystore
+        if: always()
+        run: rm -f apps/mobile/student_snapshot/android/app/keystore.jks

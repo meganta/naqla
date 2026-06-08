@@ -102,6 +102,11 @@ class KnowledgeChunk(Base):
     grade_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     extra_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # Media timestamp fields (added migration 009)
+    start_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    youtube_video_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
