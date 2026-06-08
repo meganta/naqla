@@ -9,6 +9,24 @@ from core.config import settings
 from google.cloud import storage
 from sqlalchemy import select
 
+
+def _hms_to_ms(hms: str | None) -> int | None:
+    """Convert HH:MM:SS timestamp string to milliseconds."""
+    if not hms:
+        return None
+    try:
+        parts = hms.split(":")
+        if len(parts) == 3:
+            h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+        elif len(parts) == 2:
+            h, m, s = 0, int(parts[0]), int(parts[1])
+        else:
+            return None
+        return (h * 3600 + m * 60 + s) * 1000
+    except (ValueError, AttributeError):
+        return None
+
+
 logger = logging.getLogger(__name__)
 
 # Error classification for smart retry logic
@@ -526,6 +544,9 @@ def chunk_transcript_with_timestamps(
                 "char_count": len(current_text),
                 "source_type_tag": source_type_tag,
                 "extra_meta": json.dumps(meta),
+                "start_ms": _hms_to_ms(current_start),
+                "end_ms": _hms_to_ms(current_end),
+                "youtube_video_id": base_meta.get("video_id"),
             })
             chunk_index += 1
             current_text = ""
@@ -540,6 +561,9 @@ def chunk_transcript_with_timestamps(
             "char_count": len(current_text),
             "source_type_tag": source_type_tag,
             "extra_meta": json.dumps(meta),
+            "start_ms": _hms_to_ms(current_start),
+            "end_ms": _hms_to_ms(current_end),
+            "youtube_video_id": base_meta.get("video_id"),
         })
 
     return chunks
@@ -859,6 +883,9 @@ async def process_ingestion_job(
             source_type_tag=raw["source_type_tag"],
             extra_meta=raw.get("extra_meta"),
             embedding=embeddings[i] if i < len(embeddings) else None,
+            start_ms=raw.get("start_ms"),
+            end_ms=raw.get("end_ms"),
+            youtube_video_id=raw.get("youtube_video_id"),
             created_at=datetime.utcnow(),
         )
         db.add(chunk)
