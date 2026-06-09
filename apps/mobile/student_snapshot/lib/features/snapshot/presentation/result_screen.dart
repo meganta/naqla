@@ -11,7 +11,8 @@ class ResultScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<SnapshotProvider>();
 
-    if (provider.state == SnapshotState.loading) {
+    if (provider.state == SnapshotState.uploading ||
+        provider.state == SnapshotState.processing) {
       return const Scaffold(
         body: Center(
           child: Column(
