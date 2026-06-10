@@ -102,13 +102,13 @@ async def _vector_search(
             },
         )
         rows = result.fetchall()
-        filtered = [(row[0], row[1]) for row in rows if row[1] <= threshold]
-        distances = {row[0]: row[1] for row in rows}
+        filtered = [(str(row[0]), row[1]) for row in rows if row[1] <= threshold]
+        distances = {str(row[0]): row[1] for row in rows}
         logger.info(
             "vector_search: query=%r candidates=%d filtered=%d threshold=%.2f",
             query[:60], len(rows), len(filtered), threshold,
         )
-        return [r[0] for r in filtered], distances
+        return [str(r[0]) for r in filtered], distances
     except Exception as e:
         logger.error("vector_search failed: %s", e)
         return [], {}
@@ -217,6 +217,12 @@ async def run_copilot(
         max_per_source=config.retrieval.max_chunks_per_source,
     )
     final_chunks = [rc.chunk for rc in ranked_chunks]
+
+    logger.info(
+        "copilot: reranked %d chunks, top_score=%.3f",
+        len(ranked_chunks),
+        ranked_chunks[0].rerank_score if ranked_chunks else 0.0,
+    )
 
     # --- Stage 4: Confidence + sufficiency ---
     scope_str = scope.value
