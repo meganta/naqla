@@ -135,7 +135,8 @@ export const api = {
         insufficient_context: boolean;
         is_profile_complete: boolean;
         missing_profile_fields: string[];
-        sources_used: { source_id: string; source_title: string; source_type: string; chunk_count: number }[];
+        sources_used: { source_id: string; source_title: string; source_type: string; chunk_count: number; page_numbers?: number[] }[];
+        evidence?: { evidence_id: string; source_id: string; source_title: string; excerpt: string; source_type: string; start_ms?: number; end_ms?: number; youtube_video_id?: string; playback_url?: string; page_number?: number }[];
       }>("/copilot/chat", { method: "POST", body: JSON.stringify(data) }, token),
   },
 };
