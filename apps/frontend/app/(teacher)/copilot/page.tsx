@@ -5,10 +5,24 @@ import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/lib/auth";
 import { api, checkCopilotReady } from "@/lib/api-client";
 
+interface EvidenceItem {
+  evidence_id: string;
+  source_id: string;
+  source_title: string;
+  excerpt: string;
+  source_type: string;
+  start_ms?: number;
+  end_ms?: number;
+  youtube_video_id?: string;
+  playback_url?: string;
+  page_number?: number;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
   sources?: { source_title: string; source_type: string; chunk_count: number; page_numbers?: number[] }[];
+  evidence?: EvidenceItem[];
   insufficient_context?: boolean;
 }
 
@@ -78,6 +92,7 @@ export default function CopilotPage() {
           role: "assistant",
           content: res.text,
           sources: res.sources_used,
+          evidence: res.evidence || [],
           insufficient_context: res.insufficient_context,
         },
       ]);
@@ -204,28 +219,38 @@ export default function CopilotPage() {
                 </ReactMarkdown>
               )}
               </div>
-              {/* Sources used — only show sources cited in the answer */}
-              {msg.sources && msg.sources.filter(
-                s => msg.content.includes(s.source_title)
-              ).length > 0 && (
-                <div className="mt-2 border-t border-indigo-100 pt-2">
-                  <p className="text-xs text-gray-400 mb-1 text-right">📖 المصادر المستخدمة:</p>
-                  <div className="flex flex-wrap gap-1 justify-end">
-                    {msg.sources.filter(
-                      s => msg.content.includes(s.source_title)
-                    ).map((s, j) => (
-                      <span key={j}
-                        className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200
-                          px-2 py-0.5 rounded-full font-medium">
-                        📚 {s.source_title}
-                        {s.page_numbers && s.page_numbers.length > 0 && (
-                          <span className="text-indigo-400 mr-1">
-                            {" "}— ص {s.page_numbers.join("، ")}
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
+              {/* Evidence cards */}
+              {msg.evidence && msg.evidence.length > 0 && (
+                <div className="mt-3 border-t border-indigo-100 pt-3 space-y-2">
+                  <p className="text-xs text-gray-400 text-right">📖 المصادر المستخدمة:</p>
+                  {msg.evidence.map((ev, j) => (
+                    <div key={j} className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-right">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-1">
+                          {ev.source_type === "youtube" && ev.playback_url && (
+                            <a href={ev.playback_url} target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                              ▶ {ev.start_ms !== undefined && ev.start_ms !== null
+                                ? `${Math.floor(ev.start_ms/60000)}:${String(Math.floor((ev.start_ms%60000)/1000)).padStart(2,'0')}`
+                                : "تشغيل"}
+                            </a>
+                          )}
+                          {(ev.source_type === "video" || ev.source_type === "audio") && ev.start_ms !== undefined && ev.start_ms !== null && (
+                            <span className="text-xs text-gray-500">
+                              ⏱ {Math.floor(ev.start_ms/60000)}:{String(Math.floor((ev.start_ms%60000)/1000)).padStart(2,'0')}
+                            </span>
+                          )}
+                          {ev.page_number && (
+                            <span className="text-xs text-gray-500">ص {ev.page_number}</span>
+                          )}
+                        </div>
+                        <span className="text-xs font-semibold text-indigo-700 truncate max-w-[60%]">
+                          {ev.source_type === "youtube" ? "🎥" : ev.source_type === "pdf" ? "📄" : ev.source_type === "video" ? "🎬" : "📚"} {ev.source_title}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">{ev.excerpt}</p>
+                    </div>
+                  ))}
                 </div>
               )}
               {/* Insufficient context */}

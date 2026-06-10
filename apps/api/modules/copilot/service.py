@@ -243,4 +243,4 @@ async def run_copilot(
     for s in sources_summary.values():
         s["page_numbers"].sort()
 
-    return response, ctx, insufficient, list(sources_summary.values())
+    return response, ctx, insufficient, list(sources_summary.values()), chunks

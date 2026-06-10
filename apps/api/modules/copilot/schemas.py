@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 from providers.ai_provider.base import SourceScope
@@ -35,3 +37,4 @@ class CopilotResponse(BaseModel):
     is_profile_complete: bool = True
     missing_profile_fields: list[str] = []
     sources_used: list[SourceUsed] = []
+    evidence: list[Any] = []  # list of EvidenceItem from mobile schemas
