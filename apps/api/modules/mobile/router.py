@@ -1,18 +1,12 @@
 import logging
-from datetime import timedelta
 from uuid import uuid4
 
-import google.auth
-import google.auth.transport.requests
 from fastapi import APIRouter, Depends, HTTPException, status
-from google.auth import impersonated_credentials
-from google.cloud import storage
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.ai import get_ai_provider
-from core.config import settings
 from core.database import get_db
 from modules.ingestion.models import KnowledgeChunk, KnowledgeSource
 from modules.mobile.evidence_builder import (
@@ -39,19 +33,30 @@ class ImageUploadUrlRequest(BaseModel):
 
 class ImageUploadUrlResponse(BaseModel):
     upload_url: str
-    image_ref: str  # gs:// path to pass back in snapshot-questions
+    image_ref: str
 
 
 @router.post("/image-upload-url", response_model=ImageUploadUrlResponse)
 async def get_image_upload_url(payload: ImageUploadUrlRequest):
     """
     Return a signed GCS PUT URL for the mobile app to upload a snapshot image.
-    The app then passes image_ref back in POST /mobile/snapshot-questions.
     """
     if not payload.tenant_id:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="tenant_id is required")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="tenant_id is required",
+        )
     try:
+        # Lazy imports to avoid startup failures if GCS libs not installed
+        from datetime import timedelta
+
+        import google.auth
+        import google.auth.transport.requests
+        from google.auth import impersonated_credentials
+        from google.cloud import storage
+
+        from core.config import settings
+
         file_id = uuid4().hex
         file_path = f"snapshots/{payload.tenant_id}/{file_id}.jpg"
 
@@ -101,8 +106,6 @@ async def create_snapshot_question(
 ):
     """
     Accept a snapshot question request from the mobile app.
-    Runs OCR (or uses ocr_override for testing), detects questions,
-    retrieves tenant knowledge, and returns grounded answers with evidence.
     """
     request_id = f"req_{uuid4().hex[:12]}"
     logger.info(
@@ -137,8 +140,6 @@ async def get_evidence_playback(
 ):
     """
     Return playback metadata for a given evidence_id.
-    evidence_id format: ev_<chunk_uuid>
-    TODO: generate signed GCS URL for audio/video sources.
     """
     if not evidence_id.startswith("ev_"):
         raise HTTPException(
@@ -153,7 +154,9 @@ async def get_evidence_playback(
     )
     chunk = result.scalar_one_or_none()
     if not chunk:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Evidence not found"
+        )
 
     source_result = await db.execute(
         select(KnowledgeSource).where(KnowledgeSource.id == chunk.source_id)
@@ -170,7 +173,6 @@ async def get_evidence_playback(
     playback_url = None
     if source_type in YOUTUBE_TYPES and youtube_video_id:
         playback_url = build_youtube_playback_url(youtube_video_id, start_ms)
-    # TODO: generate signed GCS URL for audio/video
 
     return PlaybackResponse(
         evidence_id=evidence_id,
