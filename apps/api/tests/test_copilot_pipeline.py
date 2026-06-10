@@ -172,7 +172,14 @@ def test_confidence_comparison_needs_two():
 
 
 def test_confidence_medium_single_strong():
-    chunks = [_make_ranked(0.70)]
+    chunks = [_make_ranked(0.50)]
     result = compute_confidence(chunks, "explanation", "teacher_kb_only", 1)
     assert result.level == "medium"
+    assert result.is_sufficient is True
+
+
+def test_confidence_sufficient_with_real_distances():
+    """Simulate real Arabic retrieval distances (0.62-0.67 → scores 0.33-0.38 + boosts)."""
+    chunks = [_make_ranked(0.38), _make_ranked(0.35), _make_ranked(0.32)]
+    result = compute_confidence(chunks, "definition", "teacher_kb_only", 1)
     assert result.is_sufficient is True

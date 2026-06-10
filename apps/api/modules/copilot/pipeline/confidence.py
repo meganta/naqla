@@ -47,8 +47,11 @@ def compute_confidence(
             missing_knowledge_suggestion=_suggest_missing(question_type),
         )
 
-    strong_chunks = [rc for rc in ranked_chunks if rc.rerank_score >= 0.55]
-    medium_chunks = [rc for rc in ranked_chunks if 0.40 <= rc.rerank_score < 0.55]
+    # Note: rerank_score = 1 - vector_distance + boosts
+    # Distances of 0.60-0.70 → base scores of 0.30-0.40, boosted to 0.35-0.55
+    # Thresholds calibrated for Arabic educational content
+    strong_chunks = [rc for rc in ranked_chunks if rc.rerank_score >= 0.45]
+    medium_chunks = [rc for rc in ranked_chunks if 0.28 <= rc.rerank_score < 0.45]
     total = len(ranked_chunks)
 
     # Comparison needs evidence for both sides
