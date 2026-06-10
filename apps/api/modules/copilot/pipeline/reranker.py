@@ -32,6 +32,23 @@ def _has_metadata(chunk: KnowledgeChunk) -> bool:
     )
 
 
+# Source type priority order — higher index = higher priority boost
+SOURCE_TYPE_PRIORITY: dict[str, float] = {
+    "youtube":         0.18,
+    "youtube_channel": 0.18,
+    "video":           0.14,
+    "audio":           0.10,
+    "pptx":            0.06,
+    "pdf":             0.03,
+    "docx":            0.02,
+    "text":            0.01,
+    "manual":          0.01,
+}
+
+# Guaranteed minimum slots per source category
+SOURCE_TYPE_ORDER = ["youtube", "youtube_channel", "video", "audio", "pptx", "pdf", "docx"]
+
+
 def rerank_chunks(
     chunks: list[KnowledgeChunk],
     distances: dict[str, float],
@@ -41,17 +58,13 @@ def rerank_chunks(
     max_per_source: int = 3,
 ) -> list[RankedChunk]:
     """
-    Rerank chunks using a weighted scoring formula:
-    - Vector similarity (primary)
-    - Keyword match in chunk text (boost)
-    - Metadata presence (small boost)
-    - Question-type relevance (boost)
-    - Per-source diversity cap
+    Rerank chunks using a weighted scoring formula with source type priority.
+    Priority order: YouTube > Video > Audio > PPTX > PDF > Word/Text
+    Guarantees at least 1 slot per available source type before score-filling.
     """
     if not chunks:
         return []
 
-    # Extract meaningful keywords from query
     stop_words = {'ما', 'ماذا', 'كيف', 'لماذا', 'متى', 'أين', 'من', 'هل', 'في', 'على', 'عن'}
     keywords = [
         w for w in re.split(r'\s+', query.strip())
@@ -62,15 +75,18 @@ def rerank_chunks(
 
     for chunk in chunks:
         distance = distances.get(chunk.id, 1.0)
-        # Convert distance to similarity (0→1, higher=better)
         similarity = max(0.0, 1.0 - distance)
 
         # Keyword match boost
         kw_hits = _count_keyword_hits(chunk.content_text or "", keywords)
         kw_boost = min(0.15, kw_hits * 0.04)
 
-        # Metadata boost (has timestamp or page = more trustworthy)
+        # Metadata boost
         meta_boost = 0.05 if _has_metadata(chunk) else 0.0
+
+        # Source type priority boost
+        src_type = (chunk.source_type_tag or "").lower()
+        type_priority_boost = SOURCE_TYPE_PRIORITY.get(src_type, 0.0)
 
         # Question-type specific boost
         type_boost = 0.0
@@ -86,9 +102,8 @@ def rerank_chunks(
         ):
             type_boost = 0.06
 
-        final_score = similarity + kw_boost + meta_boost + type_boost
+        final_score = similarity + kw_boost + meta_boost + type_priority_boost + type_boost
 
-        # Build relevance reason
         reasons = []
         if similarity >= 0.4:
             reasons.append(f"تشابه عالٍ ({similarity:.2f})")
@@ -96,6 +111,8 @@ def rerank_chunks(
             reasons.append(f"{kw_hits} كلمة مفتاحية")
         if _has_metadata(chunk):
             reasons.append("يحتوي بيانات وصفية")
+        if type_priority_boost > 0:
+            reasons.append(f"أولوية المصدر ({src_type})")
         if type_boost > 0:
             reasons.append(f"ملائم لنوع السؤال ({question_type})")
         reason = " — ".join(reasons) if reasons else "تشابه متجه"
@@ -111,15 +128,34 @@ def rerank_chunks(
     # Sort by score descending
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    # Apply per-source diversity cap
-    source_count: dict[str, int] = {}
+    # Phase 1: Guarantee 1 slot per source type (in priority order)
     result: list[RankedChunk] = []
+    used_ids: set[str] = set()
+    source_count: dict[str, int] = {}
+
+    for src_type in SOURCE_TYPE_ORDER:
+        for score, rc in scored:
+            if rc.chunk.id in used_ids:
+                continue
+            chunk_type = (rc.chunk.source_type_tag or "").lower()
+            if chunk_type == src_type:
+                result.append(rc)
+                used_ids.add(rc.chunk.id)
+                source_count[rc.chunk.source_id] = source_count.get(rc.chunk.source_id, 0) + 1
+                break  # one guaranteed slot per type
+
+    # Phase 2: Fill remaining slots by score, respecting per-source cap
     for _, rc in scored:
+        if len(result) >= max_chunks:
+            break
+        if rc.chunk.id in used_ids:
+            continue
         sid = rc.chunk.source_id
         if source_count.get(sid, 0) < max_per_source:
             result.append(rc)
+            used_ids.add(rc.chunk.id)
             source_count[sid] = source_count.get(sid, 0) + 1
-        if len(result) >= max_chunks:
-            break
 
+    # Re-sort final result by score so display order is logical
+    result.sort(key=lambda rc: rc.rerank_score, reverse=True)
     return result

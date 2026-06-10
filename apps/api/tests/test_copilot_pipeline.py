@@ -136,6 +136,27 @@ def test_reranker_empty_input():
     assert rerank_chunks([], {}, "سؤال", "unknown") == []
 
 
+def test_reranker_source_type_priority():
+    """YouTube chunk should appear before PDF chunk even with lower similarity."""
+    youtube_chunk = _make_chunk("yt1", "s_yt", "محتوى يوتيوب عن الجملة الاسمية")
+    youtube_chunk.source_type_tag = "youtube"
+    pdf_chunk = _make_chunk("pdf1", "s_pdf", "محتوى PDF عن الجملة الاسمية مفصل جداً")
+    pdf_chunk.source_type_tag = "pdf"
+
+    # Equal similarity — YouTube should win due to source priority boost
+    distances = {"yt1": 0.60, "pdf1": 0.60}
+    ranked = rerank_chunks(
+        [youtube_chunk, pdf_chunk], distances, "الجملة الاسمية", "definition"
+    )
+    assert len(ranked) == 2
+    # Both should be present
+    ids = [rc.chunk.id for rc in ranked]
+    assert "yt1" in ids
+    assert "pdf1" in ids
+    # YouTube should rank first due to source priority boost (0.18 vs 0.03)
+    assert ranked[0].chunk.id == "yt1"
+
+
 # ---------- Confidence ----------
 
 def _make_ranked(score: float) -> RankedChunk:
