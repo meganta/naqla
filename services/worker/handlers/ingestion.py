@@ -2,12 +2,29 @@ import io
 import json
 import logging
 import os
+import re
 import tempfile
 from datetime import datetime
 
 from core.config import settings
 from google.cloud import storage
 from sqlalchemy import select
+
+
+ARABIC_CHAR_PATTERN = re.compile(r'[؀-ۿ]')
+ENGLISH_WORD_PATTERN = re.compile(r'[a-zA-Z]{4,}')
+
+
+def is_gibberish_chunk(text: str) -> bool:
+    """
+    Detect bad Whisper transcriptions: English-only text with no Arabic characters.
+    These are Arabic speech transcribed as garbled English.
+    """
+    if not text or len(text.strip()) < 10:
+        return False
+    has_arabic = bool(ARABIC_CHAR_PATTERN.search(text))
+    has_english_words = bool(ENGLISH_WORD_PATTERN.search(text))
+    return has_english_words and not has_arabic
 
 
 def _hms_to_ms(hms: str | None) -> int | None:
@@ -906,6 +923,16 @@ async def process_ingestion_job(
 
     if text is not None:
         raw_chunks = chunk_arabic_text(text, source_type_tag=source.source_type)
+
+    # Filter out gibberish chunks (bad Whisper transcriptions of Arabic as English)
+    if raw_chunks and source.source_type in {"youtube", "video", "audio"}:
+        before = len(raw_chunks)
+        raw_chunks = [c for c in raw_chunks if not is_gibberish_chunk(c["content_text"])]
+        removed = before - len(raw_chunks)
+        if removed > 0:
+            logger.info(
+                "Filtered %d gibberish chunks from source %s", removed, source_id
+            )
 
     # Generate embeddings if OpenAI key is available
     embeddings: list[list[float]] = []
