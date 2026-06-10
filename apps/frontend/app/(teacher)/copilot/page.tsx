@@ -8,7 +8,7 @@ import { api, checkCopilotReady } from "@/lib/api-client";
 interface Message {
   role: "user" | "assistant";
   content: string;
-  sources?: { source_title: string; source_type: string; chunk_count: number }[];
+  sources?: { source_title: string; source_type: string; chunk_count: number; page_numbers?: number[] }[];
   insufficient_context?: boolean;
 }
 
@@ -218,6 +218,11 @@ export default function CopilotPage() {
                         className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200
                           px-2 py-0.5 rounded-full font-medium">
                         📚 {s.source_title}
+                        {s.page_numbers && s.page_numbers.length > 0 && (
+                          <span className="text-indigo-400 mr-1">
+                            {" "}— ص {s.page_numbers.join("، ")}
+                          </span>
+                        )}
                       </span>
                     ))}
                   </div>

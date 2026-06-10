@@ -231,7 +231,16 @@ async def run_copilot(
                 "source_title": source_titles.get(sid, "مصدر غير معروف"),
                 "source_type": chunk.source_type_tag or "unknown",
                 "chunk_count": 0,
+                "page_numbers": [],
             }
         sources_summary[sid]["chunk_count"] += 1
+        if chunk.page_number is not None:
+            pages = sources_summary[sid]["page_numbers"]
+            if chunk.page_number not in pages:
+                pages.append(chunk.page_number)
+
+    # Sort page numbers for display
+    for s in sources_summary.values():
+        s["page_numbers"].sort()
 
     return response, ctx, insufficient, list(sources_summary.values())

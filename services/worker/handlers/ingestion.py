@@ -140,6 +140,49 @@ def extract_text_from_bytes(file_bytes: bytes, source_type: str) -> str:
     )
 
 
+def extract_pdf_pages(file_bytes: bytes) -> list[dict]:
+    """
+    Extract text per page from a PDF.
+    Returns list of {"page_number": int (1-based), "text": str}.
+    """
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+        pages = []
+        for i, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            if text:
+                pages.append({"page_number": i, "text": text})
+        return pages
+    except Exception as e:
+        raise ValueError(f"PDF page extraction failed: {e}") from e
+
+
+def chunk_pdf_with_pages(
+    file_bytes: bytes,
+    source_type_tag: str = "pdf",
+) -> list[dict]:
+    """
+    Chunk a PDF while preserving page_number on each chunk.
+    Chunks stay within a single page; long pages are split by sentence boundaries.
+    """
+    from arabic_processing.chunker import chunk_arabic_text
+
+    pages = extract_pdf_pages(file_bytes)
+    all_chunks: list[dict] = []
+    chunk_index = 0
+
+    for page in pages:
+        page_chunks = chunk_arabic_text(page["text"], source_type_tag=source_type_tag)
+        for pc in page_chunks:
+            pc["chunk_index"] = chunk_index
+            pc["page_number"] = page["page_number"]
+            all_chunks.append(pc)
+            chunk_index += 1
+
+    return all_chunks
+
+
 # ---------------------------------------------------------------------------
 # Transcription provider abstraction
 # ---------------------------------------------------------------------------
@@ -838,7 +881,11 @@ async def process_ingestion_job(
 
         elif source.file_path:
             file_bytes = download_file(bucket_name, source.file_path)
-            text = extract_text_from_bytes(file_bytes, source.source_type)
+            if source.source_type == "pdf":
+                raw_chunks = chunk_pdf_with_pages(file_bytes, source_type_tag="pdf")
+                text = None
+            else:
+                text = extract_text_from_bytes(file_bytes, source.source_type)
 
         else:
             raise ValueError(
@@ -886,6 +933,7 @@ async def process_ingestion_job(
             start_ms=raw.get("start_ms"),
             end_ms=raw.get("end_ms"),
             youtube_video_id=raw.get("youtube_video_id"),
+            page_number=raw.get("page_number"),
             created_at=datetime.utcnow(),
         )
         db.add(chunk)

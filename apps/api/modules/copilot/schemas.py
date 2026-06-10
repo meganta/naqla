@@ -21,6 +21,7 @@ class SourceUsed(BaseModel):
     source_title: str
     source_type: str
     chunk_count: int
+    page_numbers: list[int] = []
 
 
 class CopilotResponse(BaseModel):
