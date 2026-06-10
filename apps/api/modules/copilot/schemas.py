@@ -16,6 +16,7 @@ class CopilotRequest(BaseModel):
     task_type: str = "answer_question"
     max_tokens: int = 2000
     temperature: float = 0.7
+    debug: bool = False
 
 
 class SourceUsed(BaseModel):
@@ -24,6 +25,20 @@ class SourceUsed(BaseModel):
     source_type: str
     chunk_count: int
     page_numbers: list[int] = []
+
+
+class ConfidenceInfo(BaseModel):
+    level: str          # high | medium | low | insufficient
+    score: float
+    reason: str
+
+
+class CopilotDebugInfo(BaseModel):
+    original_query: str
+    normalized_query: str
+    question_type: str
+    retrieved_candidates_count: int
+    selected_chunks_count: int
 
 
 class CopilotResponse(BaseModel):
@@ -37,4 +52,7 @@ class CopilotResponse(BaseModel):
     is_profile_complete: bool = True
     missing_profile_fields: list[str] = []
     sources_used: list[SourceUsed] = []
-    evidence: list[Any] = []  # list of EvidenceItem from mobile schemas
+    evidence: list[Any] = []
+    question_type: str = "unknown"
+    confidence: ConfidenceInfo | None = None
+    debug: CopilotDebugInfo | None = None
