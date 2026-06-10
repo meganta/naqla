@@ -66,17 +66,24 @@ async function titleFromUrl(url: string): Promise<string> {
   }
 }
 
+interface FileUploadItem {
+  file: File;
+  isDuplicate: boolean;
+  existingSource?: SourceRecord;
+}
+
 export default function KnowledgePage() {
   const { token } = useAuth();
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<FileUploadItem[]>([]);
   const [originalUrl, setOriginalUrl] = useState("");
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [uploadPercent, setUploadPercent] = useState<number>(0);
   const [elapsedTimes, setElapsedTimes] = useState<Record<string, number>>({});
+  const [filterType, setFilterType] = useState<string>("all");
   const processingStartTimes = useRef<Record<string, number>>({});
 
   useEffect(() => {
@@ -99,6 +106,7 @@ export default function KnowledgePage() {
     }, 1000);
     return () => clearInterval(timer);
   }, [sources]);
+
   const [showChannelModal, setShowChannelModal] = useState(false);
 
   const handleDelete = async (sourceId: string) => {
@@ -120,7 +128,7 @@ export default function KnowledgePage() {
     } catch (e) {
       console.error("Failed to fetch sources:", e);
     }
-  }, [token]);;
+  }, [token]);
 
   const hasActiveSources = sources.some((s) =>
     ["draft", "upload_pending", "uploaded", "processing"].includes(s.status)
@@ -134,54 +142,86 @@ export default function KnowledgePage() {
 
   const resetForm = () => {
     setSelectedType(null);
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setOriginalUrl("");
     setUploadProgress("");
     setShowForm(false);
   };
 
+  // Check for duplicates when files are selected
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const items: FileUploadItem[] = files.map((file) => {
+      const fileName = titleFromFile(file);
+      const existing = sources.find(
+        (s) => s.title.toLowerCase() === fileName.toLowerCase() ||
+               s.title.toLowerCase() === file.name.toLowerCase()
+      );
+      return {
+        file,
+        isDuplicate: !!existing,
+        existingSource: existing,
+      };
+    });
+    setSelectedFiles(items);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !selectedType) return;
+
+    const isFile = FILE_TYPES.includes(selectedType);
+    const isUrl = URL_TYPES.includes(selectedType);
+
+    // Filter out duplicates for file uploads
+    const filesToUpload = isFile
+      ? selectedFiles.filter((f) => !f.isDuplicate)
+      : [];
+
+    if (isFile && filesToUpload.length === 0 && selectedFiles.length > 0) {
+      setUploadProgress("جميع الملفات المحددة موجودة بالفعل.");
+      return;
+    }
+
     setLoading(true);
     setUploadProgress("");
 
     try {
-      const isFile = FILE_TYPES.includes(selectedType);
-      const isUrl = URL_TYPES.includes(selectedType);
+      if (isFile) {
+        for (let i = 0; i < filesToUpload.length; i++) {
+          const { file } = filesToUpload[i];
+          setUploadProgress(`جاري رفع ${file.name} (${i + 1}/${filesToUpload.length})...`);
+          setUploadPercent(0);
 
-      const title = isFile && selectedFile
-        ? titleFromFile(selectedFile)
-        : isUrl && originalUrl
-        ? await titleFromUrl(originalUrl)
-        : selectedType;
+          const title = titleFromFile(file);
+          const source = await createSource({ title, source_type: selectedType }, token);
 
-      const createPayload: any = { title, source_type: selectedType };
-      if (isUrl) createPayload.original_url = originalUrl;
+          if (source.upload_url) {
+            await new Promise<void>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.upload.onprogress = (ev) => {
+                if (ev.lengthComputable) {
+                  setUploadPercent(Math.round((ev.loaded / ev.total) * 100));
+                }
+              };
+              xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("فشل رفع الملف"));
+              xhr.onerror = () => reject(new Error("فشل رفع الملف"));
+              xhr.open("PUT", source.upload_url);
+              xhr.send(file);
+            });
+            await confirmUpload(source.source_id, token);
+          }
 
-      const source = await createSource(createPayload, token);
-
-      if (isFile && source.upload_url && selectedFile) {
-        setUploadProgress("جاري رفع الملف...");
-        setUploadPercent(0);
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              setUploadPercent(Math.round((e.loaded / e.total) * 100));
-            }
-          };
-          xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("فشل رفع الملف إلى التخزين السحابي"));
-          xhr.onerror = () => reject(new Error("فشل رفع الملف إلى التخزين السحابي"));
-          xhr.open("PUT", source.upload_url);
-          xhr.send(selectedFile);
-        });
-        setUploadProgress("تم الرفع، جاري التأكيد...");
-        await confirmUpload(source.source_id, token);
+          await processSource(source.source_id, token);
+        }
+        setUploadProgress(`تم رفع ${filesToUpload.length} ملف بنجاح!`);
+      } else if (isUrl && originalUrl) {
+        const title = await titleFromUrl(originalUrl);
+        const source = await createSource({ title, source_type: selectedType, original_url: originalUrl }, token);
+        await processSource(source.source_id, token);
+        setUploadProgress("تم إرسال المهمة بنجاح!");
       }
 
-      await processSource(source.source_id, token);
-      setUploadProgress("تم إرسال المهمة بنجاح!");
       resetForm();
       await fetchSources();
     } catch (error: any) {
@@ -194,9 +234,21 @@ export default function KnowledgePage() {
   const currentType = SOURCE_TYPES.find((t) => t.value === selectedType);
   const isFile = selectedType ? FILE_TYPES.includes(selectedType) : false;
   const isUrl = selectedType ? URL_TYPES.includes(selectedType) : false;
+  const nonDuplicateFiles = selectedFiles.filter((f) => !f.isDuplicate);
   const canSubmit = selectedType && (
-    (isFile && selectedFile) || (isUrl && originalUrl)
+    (isFile && nonDuplicateFiles.length > 0) || (isUrl && originalUrl)
   );
+
+  // Filtered sources list
+  const filteredSources = filterType === "all"
+    ? sources
+    : sources.filter((s) => s.source_type === filterType);
+
+  // Count per type for filter badges
+  const typeCounts = sources.reduce((acc, s) => {
+    acc[s.source_type] = (acc[s.source_type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-50 p-6">
@@ -220,7 +272,7 @@ export default function KnowledgePage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
             <form onSubmit={handleSubmit} className="space-y-4">
 
-              {/* Type selector — icon buttons */}
+              {/* Type selector */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-2">
                   اختر نوع المصدر
@@ -232,7 +284,7 @@ export default function KnowledgePage() {
                       type="button"
                       onClick={() => {
                         setSelectedType(type.value);
-                        setSelectedFile(null);
+                        setSelectedFiles([]);
                         setOriginalUrl("");
                       }}
                       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border
@@ -247,31 +299,57 @@ export default function KnowledgePage() {
                     </button>
                   ))}
                 </div>
-              <button
-                type="button"
-                onClick={() => setShowChannelModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border bg-white text-gray-700 border-gray-300 hover:border-indigo-400 transition-colors"
-              >
-                <span>📺</span>
-                <span>استيراد من القناة</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowChannelModal(true)}
+                  className="mt-2 flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border
+                    bg-white text-gray-700 border-gray-300 hover:border-indigo-400 transition-colors"
+                >
+                  <span>📺</span>
+                  <span>استيراد من القناة</span>
+                </button>
               </div>
 
-              {/* File picker */}
+              {/* Multiple file picker */}
               {isFile && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">الملف</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    الملفات (يمكن اختيار أكثر من ملف)
+                  </label>
                   <input
                     type="file"
-                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    multiple
+                    onChange={handleFileChange}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
                     accept={currentType?.accept || undefined}
-                    required
                   />
-                  {selectedFile && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {selectedFile.name} — {(selectedFile.size / 1024 / 1024).toFixed(2)} ميجابايت
-                    </p>
+
+                  {/* File list with duplicate warnings */}
+                  {selectedFiles.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {selectedFiles.map((item, i) => (
+                        <div key={i} className={`flex items-center justify-between text-xs px-3 py-2 rounded-lg ${
+                          item.isDuplicate ? "bg-orange-50 border border-orange-200" : "bg-green-50 border border-green-200"
+                        }`}>
+                          <span className={item.isDuplicate ? "text-orange-700" : "text-green-700"}>
+                            {item.isDuplicate ? "⚠️ موجود مسبقاً" : "✓ جديد"}
+                          </span>
+                          <div className="text-right">
+                            <span className="font-medium text-gray-700">{item.file.name}</span>
+                            {item.isDuplicate && item.existingSource && (
+                              <span className="text-orange-500 mr-2">
+                                — {STATUS_LABELS[item.existingSource.status] || item.existingSource.status}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {selectedFiles.some((f) => f.isDuplicate) && (
+                        <p className="text-xs text-orange-600 mt-1">
+                          الملفات المميزة بـ ⚠️ موجودة بالفعل ولن يتم رفعها مجدداً.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -307,17 +385,21 @@ export default function KnowledgePage() {
                     className="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium
                       hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {loading ? "جاري المعالجة..." : "إضافة"}
+                    {loading
+                      ? "جاري المعالجة..."
+                      : isFile && nonDuplicateFiles.length > 0
+                      ? `رفع ${nonDuplicateFiles.length} ملف`
+                      : "إضافة"}
                   </button>
                   {uploadProgress && (
                     <div className="text-sm">
                       <p className={uploadProgress.startsWith("خطأ") ? "text-red-600" : "text-indigo-600"}>
                         {uploadProgress}
-                        {uploadProgress === "جاري رفع الملف..." && uploadPercent > 0 && (
+                        {uploadProgress.includes("جاري رفع") && uploadPercent > 0 && (
                           <span className="mr-2 font-medium">{uploadPercent}%</span>
                         )}
                       </p>
-                      {uploadProgress === "جاري رفع الملف..." && uploadPercent > 0 && (
+                      {uploadProgress.includes("جاري رفع") && uploadPercent > 0 && (
                         <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
                           <div
                             className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
@@ -335,18 +417,51 @@ export default function KnowledgePage() {
 
         {/* Sources List */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-base font-semibold text-gray-800 mb-4">
-            المصادر المضافة
-            {sources.length > 0 && (
-              <span className="mr-2 text-xs font-normal text-gray-400">({sources.length})</span>
-            )}
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-gray-800">
+              المصادر المضافة
+              {sources.length > 0 && (
+                <span className="mr-2 text-xs font-normal text-gray-400">({filteredSources.length}/{sources.length})</span>
+              )}
+            </h2>
 
-          {sources.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-8">لا توجد مصادر مضافة بعد</p>
+            {/* Filter by type */}
+            {sources.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                <button
+                  onClick={() => setFilterType("all")}
+                  className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                    filterType === "all"
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white text-gray-600 border-gray-300 hover:border-indigo-400"
+                  }`}
+                >
+                  الكل ({sources.length})
+                </button>
+                {SOURCE_TYPES.filter((t) => typeCounts[t.value]).map((type) => (
+                  <button
+                    key={type.value}
+                    onClick={() => setFilterType(type.value)}
+                    className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                      filterType === type.value
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-gray-600 border-gray-300 hover:border-indigo-400"
+                    }`}
+                  >
+                    {type.icon} {type.label} ({typeCounts[type.value]})
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {filteredSources.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-8">
+              {sources.length === 0 ? "لا توجد مصادر مضافة بعد" : "لا توجد مصادر من هذا النوع"}
+            </p>
           ) : (
             <div className="space-y-2">
-              {sources.map((source) => (
+              {filteredSources.map((source) => (
                 <div
                   key={source.id}
                   className="flex items-center justify-between border border-gray-100
