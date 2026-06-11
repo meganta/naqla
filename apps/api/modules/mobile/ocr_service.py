@@ -65,26 +65,39 @@ class GPT4oOCRProvider(BaseOCRProvider):
 
     async def _image_content(self, image_url: str) -> dict:
         """
-        Always download and base64-encode — avoids OpenAI URL-fetch restrictions.
-        Supports public HTTPS URLs and gs:// GCS paths.
+        Download image and base64-encode for GPT-4o.
+        For gs:// paths: uses GCS client with ADC (avoids public access requirement).
+        For public HTTPS URLs: downloads directly.
         """
         if image_url.startswith("gs://"):
-            fetch_url = image_url.replace("gs://", "https://storage.googleapis.com/", 1)
+            # Parse gs://bucket/path
+            path_without_scheme = image_url[5:]
+            bucket_name, _, blob_path = path_without_scheme.partition("/")
+            try:
+                import asyncio
+
+                from google.cloud import storage as gcs
+                loop = asyncio.get_event_loop()
+                def _download():
+                    client = gcs.Client()
+                    bucket = client.bucket(bucket_name)
+                    blob = bucket.blob(blob_path)
+                    return blob.download_as_bytes()
+                image_bytes = await loop.run_in_executor(None, _download)
+                b64 = base64.b64encode(image_bytes).decode()
+            except Exception as e:
+                logger.error("GPT4oOCRProvider: GCS download failed: %s", e)
+                raise
         else:
-            fetch_url = image_url
-
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(fetch_url)
-            resp.raise_for_status()
-            b64 = base64.b64encode(resp.content).decode()
-
-        content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-        if content_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
-            content_type = "image/jpeg"
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                resp = await client.get(image_url)
+                resp.raise_for_status()
+                image_bytes = resp.content
+                b64 = base64.b64encode(image_bytes).decode()
 
         return {
             "type": "image_url",
-            "image_url": {"url": f"data:{content_type};base64,{b64}", "detail": "high"},
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "high"},
         }
 
     async def extract_text(self, image_url: str) -> OCRResult:
