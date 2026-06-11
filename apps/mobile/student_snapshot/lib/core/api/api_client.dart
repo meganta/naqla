@@ -11,7 +11,6 @@ class NaqlaApiClient {
 
   NaqlaApiClient({http.Client? client}) : _client = client ?? http.Client();
 
-  /// Get a signed GCS upload URL for a snapshot image.
   Future<ImageUploadUrls> getImageUploadUrl(String tenantId) async {
     final uri = Uri.parse('${AppConfig.apiBaseUrl}/mobile/image-upload-url');
     final response = await _client
@@ -23,7 +22,8 @@ class NaqlaApiClient {
         .timeout(const Duration(seconds: 30));
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      final data =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
       return ImageUploadUrls(
         uploadUrl: data['upload_url'] as String,
         imageRef: data['image_ref'] as String,
@@ -32,27 +32,36 @@ class NaqlaApiClient {
     throw AppException('فشل الحصول على رابط الرفع (${response.statusCode})');
   }
 
-  /// Upload image file to GCS using the signed PUT URL.
   Future<void> uploadImage(String signedUrl, File imageFile) async {
     final bytes = await imageFile.readAsBytes();
-    final request = http.Request('PUT', Uri.parse(signedUrl))
-      ..headers['Content-Type'] = 'image/jpeg'
-      ..bodyBytes = bytes;
 
-    final streamed = await request.send().timeout(const Duration(seconds: 60));
-    if (streamed.statusCode != 200 && streamed.statusCode != 201) {
-      throw AppException('فشل رفع الصورة (${streamed.statusCode})');
+    // Use http.put for simpler upload with proper headers
+    final response = await http
+        .put(
+          Uri.parse(signedUrl),
+          headers: {
+            'Content-Type': 'image/jpeg',
+            'Content-Length': bytes.length.toString(),
+          },
+          body: bytes,
+        )
+        .timeout(const Duration(seconds: 60));
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw AppException(
+        'فشل رفع الصورة (${response.statusCode}): ${response.body}',
+      );
     }
   }
 
-  /// Submit snapshot question — uses imageRef (gs:// path) after upload.
   Future<SnapshotResponse> submitSnapshot({
     required String tenantId,
     String? imageRef,
     String? ocrOverride,
     String? studentId,
   }) async {
-    final uri = Uri.parse('${AppConfig.apiBaseUrl}/mobile/snapshot-questions');
+    final uri =
+        Uri.parse('${AppConfig.apiBaseUrl}/mobile/snapshot-questions');
     final body = {
       'tenant_id': tenantId,
       if (studentId != null) 'student_id': studentId,
@@ -91,16 +100,18 @@ class NaqlaApiClient {
     final uri = Uri.parse(
       '${AppConfig.apiBaseUrl}/mobile/evidence/$evidenceId/playback',
     );
-    final response = await _client
-        .get(uri)
-        .timeout(const Duration(seconds: 30));
+    final response =
+        await _client.get(uri).timeout(const Duration(seconds: 30));
 
     if (response.statusCode == 200) {
       return PlaybackInfo.fromJson(
         jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>,
       );
     }
-    throw AppException('تعذر تحميل بيانات التشغيل.', code: response.statusCode);
+    throw AppException(
+      'تعذر تحميل بيانات التشغيل.',
+      code: response.statusCode,
+    );
   }
 }
 

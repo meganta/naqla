@@ -79,7 +79,7 @@ class SnapshotProvider extends ChangeNotifier {
       _state = SnapshotState.error;
       _statusLabel = '';
     } catch (e) {
-      _errorMessage = 'حدث خطأ غير متوقع. يرجى المحاولة مجدداً.';
+      _errorMessage = 'حدث خطأ غير متوقع: $e';
       _state = SnapshotState.error;
       _statusLabel = '';
     }
