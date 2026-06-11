@@ -141,7 +141,7 @@ async def process_snapshot(
         q_id = f"q{i + 1}"
 
         # Retrieve chunks
-        chunks = await retrieve_chunks(
+        chunks, _ = await retrieve_chunks(
             db=db,
             tenant_id=request.tenant_id,
             query=question_text,

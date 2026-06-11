@@ -81,6 +81,16 @@ class ConfirmImageScreen extends StatelessWidget {
                                   builder: (_) => const ResultScreen(),
                                 ),
                               );
+                            } else if (provider.state == SnapshotState.error) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    provider.errorMessage ?? 'حدث خطأ غير متوقع',
+                                  ),
+                                  backgroundColor: Colors.red,
+                                  duration: const Duration(seconds: 6),
+                                ),
+                              );
                             }
                           },
                     icon: isLoading
