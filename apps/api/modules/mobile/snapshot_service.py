@@ -7,6 +7,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from modules.copilot.service import retrieve_chunks
 from modules.ingestion.models import KnowledgeSource
 from modules.mobile.evidence_builder import chunk_to_evidence
@@ -124,7 +125,7 @@ async def process_snapshot(
         )
 
     # 2. Detect questions
-    questions = detect_questions(ocr_text)
+    questions = await detect_questions(ocr_text, api_key=settings.openai_api_key)
     if not questions:
         warnings.append("لم يتم اكتشاف أسئلة في النص المستخرج.")
         return SnapshotQuestionResponse(

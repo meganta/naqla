@@ -1,63 +1,157 @@
 """
-Arabic question detector.
-Detects questions by:
-1. Arabic question mark (؟)
-2. Common Arabic question starters
-3. Instruction/task starters used in Egyptian high school exams
+Arabic question detector — two-stage approach:
+1. Fast rule-based detection for simple cases (single question, no passage)
+2. GPT-4o context-aware extraction when passage + questions are mixed
+
+The AI stage understands:
+- Reading passages vs questions that follow them
+- Inline rhetorical questions inside a passage (not student questions)
+- Exam question formats: numbered, after passage, explicit instruction words
+- Multiple questions in one image
 """
+import logging
 import re
 
-QUESTION_STARTERS = (
-    r'ما\s', r'ماذا', r'لماذا', r'كيف', r'متى', r'أين', r'اين',
-    r'من\s', r'هل', r'اشرح', r'وضح', r'علل', r'استخرج', r'حدد',
-    r'قارن', r'عرف', r'عدد', r'اذكر', r'بين', r'ما\s+هو', r'ما\s+هي',
+logger = logging.getLogger(__name__)
+
+_QUESTION_MARK = re.compile(r'[؟?]')
+_INSTRUCTION_STARTERS = re.compile(
+    r'^(?:اشرح|وضح|علل|استخرج|حدد|قارن|اكتب|اذكر|عدد|لخص|حلل|استنتج|بيّن|ما|ماذا|لماذا|كيف|متى|أين|من|هل)\s',
+    re.MULTILINE | re.UNICODE,
 )
 
-_STARTER_PATTERN = re.compile(
-    r'(?:^|\n|[.،])[\s]*(' + '|'.join(QUESTION_STARTERS) + r')',
-    re.UNICODE | re.MULTILINE,
+# GPT-4o system prompt for question extraction
+_EXTRACTION_SYSTEM_PROMPT = (
+    "أنت مساعد تعليمي متخصص في تحليل أسئلة الامتحانات العربية.\n\n"
+    "مهمتك: تحليل النص المستخرج من صورة ورقة امتحان أو كتاب مدرسي، "
+    "وتحديد الأسئلة الحقيقية التي يجب على الطالب الإجابة عنها.\n\n"
+    "قواعد مهمة:\n"
+    "1. النص الطويل المتصل هو فقرة قراءة — لا تستخرج منه أسئلة "
+    "حتى لو احتوى على علامة استفهام (؟) بداخله\n"
+    "2. الأسئلة الحقيقية تأتي بعد النص، أو تبدأ بكلمات: "
+    "اشرح / وضح / علل / استخرج / حدد / قارن / ما / ماذا / لماذا / كيف\n"
+    "3. استخرج الأسئلة فقط — لا تُضمّن النص القرائي في الإجابة\n"
+    "4. إذا كانت الصورة تحتوي على سؤال واحد فقط بدون نص، أعده كما هو\n"
+    "5. أعد الأسئلة بصيغتها الكاملة والواضحة\n\n"
+    "أعد ردك بالتنسيق التالي فقط:\n"
+    "QUESTIONS:\n"
+    "- السؤال الأول\n"
+    "- السؤال الثاني (إن وجد)\n\n"
+    "إذا لم تجد أسئلة واضحة، أعد:\n"
+    "NO_QUESTIONS"
 )
 
-_QUESTION_MARK_SPLIT = re.compile(r'[؟?]')
+_EXTRACTION_USER_PROMPT = """النص المستخرج من الصورة:
+
+{text}
+
+استخرج الأسئلة الحقيقية التي يجب على الطالب الإجابة عنها."""
 
 
-def detect_questions(text: str) -> list[str]:
+def _is_simple_text(text: str) -> bool:
     """
-    Return a list of detected questions from the text.
-    If no questions are found, returns the full text as a single item
-    so the caller can still attempt a retrieval.
+    Check if text is simple enough for rule-based detection.
+    Simple = no long paragraphs, just a question or two.
     """
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    # If single short question — simple
+    if len(lines) == 1 and _QUESTION_MARK.search(text):
+        return True
+    # If all lines are short (< 150 chars) — likely just questions, no passage
+    if all(len(ln) < 150 for ln in lines) and len(lines) <= 4:
+        return True
+    return False
+
+
+def _rule_based_detect(text: str) -> list[str]:
+    """Fast rule-based detection for simple cases."""
     text = text.strip()
     if not text:
         return []
 
-    # Try splitting on Arabic question mark first
-    by_qmark = [s.strip() for s in _QUESTION_MARK_SPLIT.split(text) if s.strip()]
-    if len(by_qmark) > 1:
-        # Re-attach question mark to each fragment except last if it was split
+    # Split on Arabic question mark
+    by_qmark = _QUESTION_MARK.split(text)
+    marks = _QUESTION_MARK.findall(text)
+
+    if len(marks) >= 1:
         questions = []
-        parts = _QUESTION_MARK_SPLIT.split(text)
-        marks = _QUESTION_MARK_SPLIT.findall(text)
-        for i, part in enumerate(parts):
+        for i, part in enumerate(by_qmark):
             part = part.strip()
             if not part:
                 continue
             mark = marks[i] if i < len(marks) else ''
             questions.append(part + mark)
-        return questions
+        return [q for q in questions if q.strip()]
 
-    # Try detecting by question starters
-    sentences = re.split(r'[.،\n]', text)
-    detected = []
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        if _STARTER_PATTERN.search(' ' + sentence):
-            detected.append(sentence)
+    # No question mark — check for instruction starters
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    detected = [ln for ln in lines if _INSTRUCTION_STARTERS.match(ln)]
+    return detected if detected else [text]
 
-    if detected:
-        return detected
 
-    # Fallback: treat whole text as one question context
-    return [text]
+async def detect_questions_with_ai(
+    text: str,
+    api_key: str,
+) -> list[str]:
+    """
+    Use GPT-4o to understand the full context and extract only the real questions.
+    """
+    try:
+        import openai
+        client = openai.AsyncOpenAI(api_key=api_key)
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=500,
+            temperature=0.0,
+            messages=[
+                {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": _EXTRACTION_USER_PROMPT.format(text=text)},
+            ],
+        )
+        result = (response.choices[0].message.content or "").strip()
+        logger.info("AI question extraction result: %s", result[:200])
+
+        if result == "NO_QUESTIONS" or "NO_QUESTIONS" in result:
+            return []
+
+        if "QUESTIONS:" in result:
+            lines = result.split("QUESTIONS:")[1].strip().splitlines()
+            questions = []
+            for line in lines:
+                line = line.strip().lstrip("- ").strip()
+                if line:
+                    questions.append(line)
+            return questions
+
+        # Fallback: return as single question
+        return [result]
+
+    except Exception as e:
+        logger.error("AI question detection failed: %s", e)
+        return []
+
+
+async def detect_questions(text: str, api_key: str | None = None) -> list[str]:
+    """
+    Main entry point.
+    Uses rule-based for simple text, AI for complex passages.
+    """
+    text = text.strip()
+    if not text:
+        return []
+
+    # Simple text → fast rule-based
+    if _is_simple_text(text):
+        logger.info("question_detector: using rule-based detection")
+        return _rule_based_detect(text)
+
+    # Complex text with passage → AI extraction
+    if api_key:
+        logger.info("question_detector: using AI context-aware detection")
+        questions = await detect_questions_with_ai(text, api_key)
+        if questions:
+            return questions
+        # AI found nothing — fallback to rule-based
+        logger.warning("question_detector: AI found no questions, falling back to rule-based")
+
+    return _rule_based_detect(text)
