@@ -26,14 +26,17 @@ NO_ANSWER_TEXT = "⚠️ لم أجد إجابة كافية في قاعدة مع�
 
 SNAPSHOT_SYSTEM_PROMPT = """\
 You are an Arabic-language education assistant for Egyptian high school students.
-You MUST answer ONLY using the retrieved knowledge chunks provided below.
-Do NOT use any general knowledge outside the provided chunks.
-If the chunks do not contain a sufficient answer, respond ONLY with:
-⚠️ لم أجد إجابة كافية في قاعدة معرفة المعلم لهذا السؤال.
-Do not add any extra text in that case.
-Answer in clear formal Arabic suitable for a high school student.
-Keep the answer concise and directly address the question.
+You will receive the full text from the student's image (may include a reading
+passage + question) and retrieved knowledge chunks from the teacher's knowledge base.
+Rules:
+- Read the full passage carefully as context before answering
+- Use knowledge chunks to support and enrich the answer
+- If neither passage nor chunks contain the answer, respond ONLY with:
+  ⚠️ لم أجد إجابة كافية في قاعدة معرفة المعلم لهذا السؤال.
+- Answer in clear formal Arabic suitable for a high school student
+- Be concise and directly address the question only
 """
+
 
 
 async def _get_sources_by_ids(
@@ -50,21 +53,33 @@ async def _get_sources_by_ids(
 async def _answer_question(
     provider: AIProvider,
     question: str,
+    full_ocr_text: str,
     chunks,
     sources: dict[str, KnowledgeSource],
 ) -> tuple[str, float]:
-    """Generate an answer from chunks. Returns (answer_text, confidence)."""
-    if not chunks:
-        return NO_ANSWER_TEXT, 0.0
-
+    """Generate answer using full OCR passage context + KB chunks."""
     context_parts = []
+
+    # Full OCR text as reading passage context
+    if full_ocr_text and len(full_ocr_text) > len(question) + 20:
+        context_parts.append(
+            f"[نص الصورة الكامل - اقرأه كاملاً قبل الإجابة]\n{full_ocr_text}"
+        )
+
+    # KB chunks
     for i, chunk in enumerate(chunks, 1):
         source = sources.get(chunk.source_id)
         title = source.title if source else "مصدر غير معروف"
-        context_parts.append(f"[{i}] {title}:\n{chunk.content_text}")
+        context_parts.append(f"[مصدر {i}: {title}]\n{chunk.content_text}")
+
+    if not context_parts:
+        return NO_ANSWER_TEXT, 0.0
 
     context = "\n\n".join(context_parts)
-    user_message = f"السياق:\n{context}\n\nالسؤال:\n{question}"
+    user_message = (
+        f"{context}\n\n"
+        f"السؤال المطلوب الإجابة عنه فقط:\n{question}"
+    )
 
     try:
         response = await provider.complete(
@@ -74,7 +89,6 @@ async def _answer_question(
             temperature=0.3,
         )
         answer = response.text.strip()
-        # Simple confidence heuristic: no-answer response → 0.0, else based on chunk count
         if answer.startswith("⚠️"):
             confidence = 0.0
         else:
@@ -154,7 +168,9 @@ async def process_snapshot(
         sources = await _get_sources_by_ids(db, source_ids)
 
         # Generate answer
-        answer, confidence = await _answer_question(provider, question_text, chunks, sources)
+        answer, confidence = await _answer_question(
+            provider, question_text, ocr_text, chunks, sources
+        )
 
         # Build evidence
         evidence = []
