@@ -65,5 +65,6 @@ def test_simple_text_is_simple():
 
 
 def test_long_passage_not_simple():
-    long_text = "\n".join(["هذا نص طويل جداً يحتوي على فقرة قراءة مطولة تتضمن الكثير من الكلمات والجمل الطويلة جداً"] * 5)
+    line = "هذا نص طويل جداً يحتوي على فقرة قراءة مطولة تتضمن الكثير من الكلمات"
+    long_text = "\n".join([line] * 5)
     assert _is_simple_text(long_text) is False
