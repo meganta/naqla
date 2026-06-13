@@ -147,7 +147,8 @@ async def process_snapshot(
         )
 
     logger.info(
-        "snapshot request_id=%s detected %d question(s)", request_id, len(questions)
+        "snapshot request_id=%s detected %d question(s): %s",
+        request_id, len(questions), [q[:50] for q in questions]
     )
 
     # 3. Answer each question

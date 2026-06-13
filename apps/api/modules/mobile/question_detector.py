@@ -50,14 +50,18 @@ _EXTRACTION_USER_PROMPT = (
 def _is_simple_text(text: str) -> bool:
     """
     Check if text is simple enough for rule-based detection.
-    Simple = no long paragraphs, just a question or two.
+    Simple = short text with no long reading passage.
     """
-    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
-    # If single short question — simple
+    text = text.strip()
+    # Long text → likely contains a passage, use AI
+    if len(text) > 300:
+        return False
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    # Single short question
     if len(lines) == 1 and _QUESTION_MARK.search(text):
         return True
-    # If all lines are short (< 150 chars) — likely just questions, no passage
-    if all(len(ln) < 150 for ln in lines) and len(lines) <= 4:
+    # Few short lines — likely just questions, no passage
+    if all(len(ln) < 150 for ln in lines) and len(lines) <= 3:
         return True
     return False
 
