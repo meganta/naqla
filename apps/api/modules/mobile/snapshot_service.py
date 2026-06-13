@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from modules.copilot.pipeline.reranker import rerank_chunks
 from modules.copilot.service import retrieve_chunks
 from modules.ingestion.models import KnowledgeSource
 from modules.mobile.evidence_builder import chunk_to_evidence
@@ -157,25 +158,42 @@ async def process_snapshot(
         q_id = f"q{i + 1}"
 
         # Retrieve chunks
-        chunks, _ = await retrieve_chunks(
+        chunks, distances = await retrieve_chunks(
             db=db,
             tenant_id=request.tenant_id,
             query=question_text,
             scope=SourceScope.TEACHER_KB,
         )
 
+        # Rerank and filter — keep top 3 with minimum quality score
+        ranked = rerank_chunks(
+            chunks=chunks,
+            distances=distances,
+            query=question_text,
+            question_type="unknown",
+            max_chunks=8,
+            max_per_source=2,
+        )
+        # Filter: minimum rerank score 0.28, max 3 evidence cards
+        MIN_EVIDENCE_SCORE = 0.28
+        MAX_EVIDENCE_CARDS = 3
+        top_ranked = [
+            rc for rc in ranked if rc.rerank_score >= MIN_EVIDENCE_SCORE
+        ][:MAX_EVIDENCE_CARDS]
+        top_chunks = [rc.chunk for rc in top_ranked]
+
         # Load sources for evidence
-        source_ids = list({c.source_id for c in chunks})
+        source_ids = list({c.source_id for c in top_chunks})
         sources = await _get_sources_by_ids(db, source_ids)
 
-        # Generate answer
+        # Generate answer using top chunks
         answer, confidence = await _answer_question(
-            provider, question_text, ocr_text, chunks, sources
+            provider, question_text, ocr_text, top_chunks, sources
         )
 
-        # Build evidence
+        # Build evidence cards from top ranked only
         evidence = []
-        for chunk in chunks:
+        for chunk in top_chunks:
             source = sources.get(chunk.source_id)
             if not source:
                 continue
