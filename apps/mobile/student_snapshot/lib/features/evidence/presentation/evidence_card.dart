@@ -2,6 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:student_snapshot/features/snapshot/data/snapshot_models.dart';
 
+// Source type priority order (matches backend reranker)
+const _SOURCE_PRIORITY = [
+  EvidenceType.youtube,
+  EvidenceType.video,
+  EvidenceType.audio,
+  EvidenceType.pptx,
+  EvidenceType.pdf,
+  EvidenceType.docx,
+  EvidenceType.text,
+  EvidenceType.manual,
+  EvidenceType.unknown,
+];
+
+int evidenceSortOrder(EvidenceItem ev) => _SOURCE_PRIORITY.indexOf(ev.sourceType);
+
 class EvidenceCard extends StatelessWidget {
   final EvidenceItem evidence;
 
@@ -17,6 +32,8 @@ class EvidenceCard extends StatelessWidget {
         return Icons.headphones;
       case EvidenceType.pdf:
         return Icons.picture_as_pdf;
+      case EvidenceType.pptx:
+        return Icons.slideshow;
       case EvidenceType.docx:
         return Icons.description;
       default:
@@ -34,6 +51,10 @@ class EvidenceCard extends StatelessWidget {
         return Colors.teal;
       case EvidenceType.pdf:
         return Colors.orange;
+      case EvidenceType.pptx:
+        return Colors.deepOrange;
+      case EvidenceType.docx:
+        return Colors.blue;
       default:
         return Colors.blueGrey;
     }
@@ -47,13 +68,31 @@ class EvidenceCard extends StatelessWidget {
       );
       return;
     }
+
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
+
+    // Try YouTube app first, then browser
+    if (evidence.sourceType == EvidenceType.youtube) {
+      final youtubeVideoId = evidence.youtubeVideoId;
+      final startSecs = evidence.startMs != null ? evidence.startMs! ~/ 1000 : 0;
+
+      // Try YouTube app URI scheme
+      if (youtubeVideoId != null) {
+        final appUri = Uri.parse('vnd.youtube:$youtubeVideoId?t=$startSecs');
+        if (await canLaunchUrl(appUri)) {
+          await launchUrl(appUri, mode: LaunchMode.externalNonBrowserApplication);
+          return;
+        }
+      }
+    }
+
+    // Fallback to browser
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر فتح الرابط')),
+          SnackBar(content: Text('تعذر فتح الرابط: $e')),
         );
       }
     }

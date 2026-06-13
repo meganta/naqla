@@ -182,3 +182,23 @@ async def get_evidence_playback(
         end_ms=end_ms,
         youtube_video_id=youtube_video_id,
     )
+
+
+class TenantInfo(BaseModel):
+    tenant_id: str
+    name: str
+    slug: str
+
+
+@router.get("/tenants", response_model=list[TenantInfo])
+async def list_tenants(db: AsyncSession = Depends(get_db)):
+    """Return all available tenants for student access screen."""
+    from modules.auth.models import Tenant
+    result = await db.execute(
+        select(Tenant).order_by(Tenant.name)
+    )
+    tenants = result.scalars().all()
+    return [
+        TenantInfo(tenant_id=str(t.id), name=t.name, slug=t.slug)
+        for t in tenants
+    ]

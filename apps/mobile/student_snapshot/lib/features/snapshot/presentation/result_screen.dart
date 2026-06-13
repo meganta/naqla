@@ -171,7 +171,9 @@ class _QuestionAnswerCard extends StatelessWidget {
                 textDirection: TextDirection.rtl,
               ),
               const SizedBox(height: 8),
-              ...question.evidence.map((ev) => EvidenceCard(evidence: ev)),
+              ...([...question.evidence]
+                ..sort((a, b) => evidenceSortOrder(a).compareTo(evidenceSortOrder(b))))
+                .map((ev) => EvidenceCard(evidence: ev)),
             ],
           ],
         ),
