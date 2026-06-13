@@ -193,12 +193,27 @@ class TenantInfo(BaseModel):
 @router.get("/tenants", response_model=list[TenantInfo])
 async def list_tenants(db: AsyncSession = Depends(get_db)):
     """Return all available tenants for student access screen."""
-    from modules.auth.models import Tenant
-    result = await db.execute(
-        select(Tenant).order_by(Tenant.name)
-    )
-    tenants = result.scalars().all()
-    return [
-        TenantInfo(tenant_id=str(t.id), name=t.name, slug=t.slug)
-        for t in tenants
-    ]
+    try:
+        from sqlalchemy import and_
+
+        from modules.auth.models import Tenant
+        result = await db.execute(
+            select(Tenant).where(
+                and_(
+                    Tenant.is_active.is_(True),
+                    ~Tenant.name.ilike('%ci school%'),
+                    ~Tenant.name.ilike('%ci_%'),
+                )
+            ).order_by(Tenant.name)
+        )
+        tenants = result.scalars().all()
+        return [
+            TenantInfo(tenant_id=str(t.id), name=t.name, slug=t.slug)
+            for t in tenants
+        ]
+    except Exception as e:
+        logger.error("list_tenants failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"فشل تحميل قائمة المعلمين: {e}",
+        ) from e
