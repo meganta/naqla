@@ -19,25 +19,52 @@ from modules.mobile.schemas import (
     SnapshotQuestionRequest,
     SnapshotQuestionResponse,
 )
+from modules.settings.service import get_tenant_settings
 from providers.ai_provider.base import AIMessage, AIProvider, SourceScope
 
 logger = logging.getLogger(__name__)
 
 NO_ANSWER_TEXT = "⚠️ لم أجد إجابة كافية في قاعدة معرفة المعلم لهذا السؤال."
 
-SNAPSHOT_SYSTEM_PROMPT = """\
-You are an Arabic-language education assistant for Egyptian high school students.
-You will receive the full text from the student's image (may include a reading
-passage + question) and retrieved knowledge chunks from the teacher's knowledge base.
-Rules:
-- Read the full passage carefully as context before answering
-- Use knowledge chunks to support and enrich the answer
-- If neither passage nor chunks contain the answer, respond ONLY with:
-  ⚠️ لم أجد إجابة كافية في قاعدة معرفة المعلم لهذا السؤال.
-- Answer in clear formal Arabic suitable for a high school student
-- Be concise and directly address the question only
-"""
+def _build_snapshot_system_prompt(
+    subject: str | None = None,
+    grade_level: str | None = None,
+) -> str:
+    """Build a subject-aware expert persona system prompt."""
+    if subject and grade_level:
+        persona = (
+            f"You are a highly experienced {subject} teacher specializing in "
+            f"{grade_level} curriculum with deep mastery of the subject, "
+            f"its rules, concepts, and exam question patterns."
+        )
+    elif subject:
+        persona = (
+            f"You are a highly experienced {subject} teacher with deep mastery "
+            f"of the subject rules, concepts, and how questions are structured."
+        )
+    else:
+        persona = (
+            "You are a brilliant, highly experienced curriculum expert and teacher "
+            "with deep mastery of academic subjects, their rules, concepts, "
+            "and how exam questions are structured."
+        )
 
+    return (
+        f"{persona}\n\n"
+        "A student sent you a photo of an exam question or textbook page.\n"
+        "You will receive:\n"
+        "1. The full text from the image (may include a reading passage + question)\n"
+        "2. Retrieved knowledge chunks from the teacher's knowledge base\n\n"
+        "How to think and answer:\n"
+        "- Read and deeply understand the full passage as an expert would\n"
+        "- Identify the key theme, concepts, and academic elements in the passage\n"
+        "- Understand exactly what the question asks in context of this passage\n"
+        "- Use your expert knowledge AND retrieved chunks to form the answer\n"
+        "- If passage + chunks lack sufficient info, respond ONLY with:\n"
+        "  ⚠️ لم أجد إجابة كافية في قاعدة معرفة المعلم لهذا السؤال.\n"
+        "- Answer clearly at the right academic level\n"
+        "- Structure: direct answer first, explanation second, example if needed\n"
+    )
 
 
 async def _get_sources_by_ids(
@@ -57,6 +84,7 @@ async def _answer_question(
     full_ocr_text: str,
     chunks,
     sources: dict[str, KnowledgeSource],
+    system_prompt: str = "",
 ) -> tuple[str, float]:
     """Generate answer using full OCR passage context + KB chunks."""
     context_parts = []
@@ -85,7 +113,7 @@ async def _answer_question(
     try:
         response = await provider.complete(
             messages=[AIMessage(role="user", content=user_message)],
-            system_prompt=SNAPSHOT_SYSTEM_PROMPT,
+            system_prompt=system_prompt or _build_snapshot_system_prompt(),
             max_tokens=800,
             temperature=0.3,
         )
@@ -100,6 +128,45 @@ async def _answer_question(
         return NO_ANSWER_TEXT, 0.0
 
 
+async def _extract_passage_concepts(
+    text: str,
+    question: str,
+    api_key: str,
+) -> str:
+    """
+    Extract key concepts from the passage to enrich KB search query.
+    Returns a combined search query: question + passage concepts.
+    """
+    try:
+        import openai
+        client = openai.AsyncOpenAI(api_key=api_key)
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=100,
+            temperature=0.0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract 3-5 key academic concepts or topics from the passage. "
+                        "Return ONLY a comma-separated list of concepts in the same "
+                        "language as the text. No explanation."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"الفقرة:\n{text[:500]}\n\nالسؤال: {question}",
+                },
+            ],
+        )
+        concepts = (response.choices[0].message.content or "").strip()
+        if concepts:
+            return f"{question} {concepts}"
+    except Exception as e:
+        logger.warning("_extract_passage_concepts failed: %s", e)
+    return question
+
+
 async def process_snapshot(
     db: AsyncSession,
     provider: AIProvider,
@@ -108,6 +175,13 @@ async def process_snapshot(
 ) -> SnapshotQuestionResponse:
     warnings: list[str] = []
     logger.info("snapshot request_id=%s tenant=%s", request_id, request.tenant_id)
+
+    # Load tenant settings for subject-aware persona
+    tenant_settings = await get_tenant_settings(db, request.tenant_id)
+    snapshot_system_prompt = _build_snapshot_system_prompt(
+        subject=getattr(tenant_settings, "subject", None),
+        grade_level=getattr(tenant_settings, "grade_level", None),
+    )
 
     # 1. OCR or override
     ocr_text = ""
@@ -157,11 +231,25 @@ async def process_snapshot(
     for i, question_text in enumerate(questions):
         q_id = f"q{i + 1}"
 
-        # Retrieve chunks
+        # Enrich search query with passage concepts if text is long enough
+        search_query = question_text
+        if (
+            settings.openai_api_key
+            and len(ocr_text) > len(question_text) + 50
+        ):
+            search_query = await _extract_passage_concepts(
+                ocr_text, question_text, settings.openai_api_key
+            )
+            logger.info(
+                "snapshot request_id=%s enriched query: %s",
+                request_id, search_query[:100],
+            )
+
+        # Retrieve chunks using enriched query
         chunks, distances = await retrieve_chunks(
             db=db,
             tenant_id=request.tenant_id,
-            query=question_text,
+            query=search_query,
             scope=SourceScope.TEACHER_KB,
         )
 
@@ -188,7 +276,8 @@ async def process_snapshot(
 
         # Generate answer using top chunks
         answer, confidence = await _answer_question(
-            provider, question_text, ocr_text, top_chunks, sources
+            provider, question_text, ocr_text, top_chunks, sources,
+            system_prompt=snapshot_system_prompt,
         )
 
         # Build evidence cards from top ranked only
