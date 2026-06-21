@@ -98,7 +98,10 @@ async def detect_questions_with_ai(
 ) -> list[str]:
     """
     Use GPT-4o to understand the full context and extract only the real questions.
+    For long texts, focus on the last portion where questions typically appear.
     """
+    # Questions appear at the end of the page — focus on last 3000 chars for long texts
+    focused_text = text[-3000:] if len(text) > 3000 else text
     try:
         import openai
         client = openai.AsyncOpenAI(api_key=api_key)
@@ -108,7 +111,7 @@ async def detect_questions_with_ai(
             temperature=0.0,
             messages=[
                 {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
-                {"role": "user", "content": _EXTRACTION_USER_PROMPT.format(text=text)},
+                {"role": "user", "content": _EXTRACTION_USER_PROMPT.format(text=focused_text)},
             ],
         )
         result = (response.choices[0].message.content or "").strip()
