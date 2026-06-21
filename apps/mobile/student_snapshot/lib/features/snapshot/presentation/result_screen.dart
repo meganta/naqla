@@ -99,11 +99,12 @@ class ResultScreen extends StatelessWidget {
           );
         }
 
+        final questions = provider.selectedQuestions;
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: result.detectedQuestions.length,
+          itemCount: questions.length,
           itemBuilder: (context, i) {
-            final q = result.detectedQuestions[i];
+            final q = questions[i];
             return _QuestionAnswerCard(question: q);
           },
         );

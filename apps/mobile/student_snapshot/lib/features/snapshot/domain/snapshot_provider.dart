@@ -17,18 +17,50 @@ class SnapshotProvider extends ChangeNotifier {
   String? _errorMessage;
   File? _selectedImage;
   String _statusLabel = '';
+  Set<String> _selectedQuestionIds = {};
 
   SnapshotState get state => _state;
   SnapshotResponse? get result => _result;
   String? get errorMessage => _errorMessage;
   File? get selectedImage => _selectedImage;
   String get statusLabel => _statusLabel;
+  Set<String> get selectedQuestionIds => _selectedQuestionIds;
+
+  List<DetectedQuestion> get selectedQuestions {
+    if (_result == null) return [];
+    if (_selectedQuestionIds.isEmpty) return _result!.detectedQuestions;
+    return _result!.detectedQuestions
+        .where((q) => _selectedQuestionIds.contains(q.questionId))
+        .toList();
+  }
+
+  void initQuestionSelection() {
+    if (_result == null) return;
+    _selectedQuestionIds = _result!.detectedQuestions.map((q) => q.questionId).toSet();
+    notifyListeners();
+  }
+
+  void toggleQuestion(String questionId) {
+    if (_selectedQuestionIds.contains(questionId)) {
+      _selectedQuestionIds.remove(questionId);
+    } else {
+      _selectedQuestionIds.add(questionId);
+    }
+    notifyListeners();
+  }
+
+  void selectAllQuestions() {
+    if (_result == null) return;
+    _selectedQuestionIds = _result!.detectedQuestions.map((q) => q.questionId).toSet();
+    notifyListeners();
+  }
 
   void setSelectedImage(File image) {
     _selectedImage = image;
     _state = SnapshotState.idle;
     _result = null;
     _errorMessage = null;
+    _selectedQuestionIds = {};
     notifyListeners();
   }
 
@@ -38,6 +70,7 @@ class SnapshotProvider extends ChangeNotifier {
     _errorMessage = null;
     _selectedImage = null;
     _statusLabel = '';
+    _selectedQuestionIds = {};
     notifyListeners();
   }
 

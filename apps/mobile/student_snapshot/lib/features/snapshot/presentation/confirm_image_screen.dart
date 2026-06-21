@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:student_snapshot/features/snapshot/domain/snapshot_provider.dart';
-import 'package:student_snapshot/features/snapshot/presentation/result_screen.dart';
+import 'package:student_snapshot/features/snapshot/presentation/question_review_screen.dart';
 
 class ConfirmImageScreen extends StatelessWidget {
   final String tenantId;
@@ -78,7 +78,7 @@ class ConfirmImageScreen extends StatelessWidget {
                             if (provider.state == SnapshotState.success) {
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (_) => const ResultScreen(),
+                                  builder: (_) => const QuestionReviewScreen(),
                                 ),
                               );
                             } else if (provider.state == SnapshotState.error) {
