@@ -23,16 +23,16 @@ _INSTRUCTION_STARTERS = re.compile(
 # GPT-4o system prompt for question extraction
 _EXTRACTION_SYSTEM_PROMPT = (
     "أنت مساعد تعليمي متخصص في تحليل أسئلة الامتحانات العربية.\n\n"
-    "مهمتك: تحديد السؤال أو الأسئلة الحقيقية التي يجب على الطالب "
-    "الإجابة عنها من النص.\n\n"
+    "مهمتك: تحليل النص المستخرج من صورة ورقة امتحان أو كتاب مدرسي، "
+    "وتحديد الأسئلة الحقيقية التي يجب على الطالب الإجابة عنها.\n\n"
     "قواعد مهمة:\n"
-    "1. النص قد يحتوي على فقرة قراءة طويلة يليها سؤال — "
-    "الفقرة هي السياق وليست سؤالاً\n"
-    "2. علامة الاستفهام (؟) داخل الفقرة القرائية ليست سؤالاً للطالب\n"
-    "3. الأسئلة الحقيقية تأتي بعد النص أو تبدأ بكلمات مثل: "
+    "1. النص الطويل المتصل هو فقرة قراءة — لا تستخرج منه أسئلة "
+    "حتى لو احتوى على علامة استفهام (؟) بداخله\n"
+    "2. الأسئلة الحقيقية تأتي بعد النص، أو تبدأ بكلمات: "
     "اشرح / وضح / علل / استخرج / حدد / قارن / ما / ماذا / لماذا / كيف\n"
-    "4. أعد السؤال فقط — لا تُعيد الفقرة القرائية\n"
-    "5. إذا لم يكن هناك فقرة قراءة وكان النص سؤالاً مباشراً، أعده كما هو\n\n"
+    "3. استخرج الأسئلة فقط — لا تُضمّن النص القرائي في الإجابة\n"
+    "4. إذا كانت الصورة تحتوي على سؤال واحد فقط بدون نص، أعده كما هو\n"
+    "5. أعد الأسئلة بصيغتها الكاملة والواضحة\n\n"
     "أعد ردك بالتنسيق التالي فقط:\n"
     "QUESTIONS:\n"
     "- السؤال الأول\n"
@@ -41,27 +41,24 @@ _EXTRACTION_SYSTEM_PROMPT = (
     "NO_QUESTIONS"
 )
 
-_EXTRACTION_USER_PROMPT = (
-    "النص المستخرج من الصورة:\n\n{text}\n\n"
-    "حدد السؤال أو الأسئلة الحقيقية التي يجب على الطالب الإجابة عنها."
-)
+_EXTRACTION_USER_PROMPT = """النص المستخرج من الصورة:
+
+{text}
+
+استخرج الأسئلة الحقيقية التي يجب على الطالب الإجابة عنها."""
 
 
 def _is_simple_text(text: str) -> bool:
     """
     Check if text is simple enough for rule-based detection.
-    Simple = short text with no long reading passage.
+    Simple = no long paragraphs, just a question or two.
     """
-    text = text.strip()
-    # Long text → likely contains a passage, use AI
-    if len(text) > 300:
-        return False
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    # Single short question
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    # If single short question — simple
     if len(lines) == 1 and _QUESTION_MARK.search(text):
         return True
-    # Few short lines — likely just questions, no passage
-    if all(len(ln) < 150 for ln in lines) and len(lines) <= 3:
+    # If all lines are short (< 150 chars) — likely just questions, no passage
+    if all(len(ln) < 150 for ln in lines) and len(lines) <= 4:
         return True
     return False
 
@@ -126,12 +123,8 @@ async def detect_questions_with_ai(
                     questions.append(line)
             return questions
 
-        # Unexpected format — log and return empty rather than returning the full response
-        logger.warning(
-            "AI question extraction: unexpected format, returning empty. result=%s",
-            result[:200],
-        )
-        return []
+        # Fallback: return as single question
+        return [result]
 
     except Exception as e:
         logger.error("AI question detection failed: %s", e)
@@ -142,25 +135,23 @@ async def detect_questions(text: str, api_key: str | None = None) -> list[str]:
     """
     Main entry point.
     Uses rule-based for simple text, AI for complex passages.
-    Never returns the full passage as a question.
     """
     text = text.strip()
     if not text:
         return []
 
-    # Simple text (short, no passage) → fast rule-based
+    # Simple text → fast rule-based
     if _is_simple_text(text):
         logger.info("question_detector: using rule-based detection")
-        result = _rule_based_detect(text)
-        # Don't return items longer than 300 chars — that's a passage, not a question
-        return [q for q in result if len(q) <= 300]
+        return _rule_based_detect(text)
 
-    # Complex text with passage → AI only, never fall back to rule-based
+    # Complex text with passage → AI extraction
     if api_key:
         logger.info("question_detector: using AI context-aware detection")
         questions = await detect_questions_with_ai(text, api_key)
-        return questions
+        if questions:
+            return questions
+        # AI found nothing — fallback to rule-based
+        logger.warning("question_detector: AI found no questions, falling back to rule-based")
 
-    # No API key and complex text — return empty rather than the passage
-    logger.warning("question_detector: complex text but no API key — cannot extract questions")
-    return []
+    return _rule_based_detect(text)
