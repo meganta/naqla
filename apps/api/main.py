@@ -11,6 +11,7 @@ from modules.copilot.router import router as copilot_router
 from modules.ingestion.router import router as ingestion_router
 from modules.mobile.router import router as mobile_router
 from modules.settings.router import router as settings_router
+from modules.teacher_profile.router import router as teacher_profile_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -36,6 +37,7 @@ app.include_router(ingestion_router)
 app.include_router(copilot_router)
 app.include_router(settings_router)
 app.include_router(mobile_router)
+app.include_router(teacher_profile_router)
 
 
 @app.get("/health")
