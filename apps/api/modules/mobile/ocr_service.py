@@ -106,7 +106,7 @@ class GPT4oOCRProvider(BaseOCRProvider):
             image_block = await self._image_content(image_url)
             response = await self.client.chat.completions.create(
                 model="gpt-4o",
-                max_tokens=1000,
+                max_tokens=4000,
                 temperature=0.0,
                 messages=[
                     {"role": "system", "content": OCR_SYSTEM_PROMPT},
