@@ -153,12 +153,12 @@ export const deleteSource = api.ingestion.deleteSource;
 
 // Teacher Style Profile
 export const generateTeacherProfile = (token: string) =>
-  api.request<{ message: string; version: number; status: string }>(
+  request<{ message: string; version: number; status: string }>(
     "/teacher-profile/generate", { method: "POST" }, token
   );
 
 export const getTeacherProfile = (token: string, includeProfile = false) =>
-  api.request<{
+  request<{
     tenant_id: string;
     version: number;
     status: string;
