@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from modules.copilot.pipeline.reranker import rerank_chunks
+from modules.copilot.prompt_builder import build_style_profile_section
 from modules.copilot.service import retrieve_chunks
 from modules.ingestion.models import KnowledgeSource
 from modules.mobile.evidence_builder import chunk_to_evidence
@@ -20,6 +21,7 @@ from modules.mobile.schemas import (
     SnapshotQuestionResponse,
 )
 from modules.settings.service import get_tenant_settings
+from modules.teacher_profile.service import get_profile as get_teacher_style_profile
 from providers.ai_provider.base import AIMessage, AIProvider, SourceScope
 
 logger = logging.getLogger(__name__)
@@ -29,8 +31,9 @@ NO_ANSWER_TEXT = "⚠️ لم أجد إجابة كافية في قاعدة مع�
 def _build_snapshot_system_prompt(
     subject: str | None = None,
     grade_level: str | None = None,
+    style_profile: dict | None = None,
 ) -> str:
-    """Build a subject-aware expert persona system prompt."""
+    """Build a subject-aware expert persona system prompt with optional style profile."""
     if subject and grade_level:
         persona = (
             f"You are a highly experienced {subject} teacher specializing in "
@@ -49,7 +52,7 @@ def _build_snapshot_system_prompt(
             "and how exam questions are structured."
         )
 
-    return (
+    base = (
         f"{persona}\n\n"
         "A student sent you a photo of an exam question or textbook page.\n"
         "You will receive:\n"
@@ -65,6 +68,13 @@ def _build_snapshot_system_prompt(
         "- Answer clearly at the right academic level\n"
         "- Structure: direct answer first, explanation second, example if needed\n"
     )
+
+    if style_profile:
+        style_section = build_style_profile_section(style_profile)
+        if style_section:
+            base += f"\n\n{style_section}"
+
+    return base
 
 
 async def _get_sources_by_ids(
@@ -178,9 +188,21 @@ async def process_snapshot(
 
     # Load tenant settings for subject-aware persona
     tenant_settings = await get_tenant_settings(db, request.tenant_id)
+
+    # Load teacher style profile for personality injection
+    import json as _json
+    style_profile: dict = {}
+    try:
+        profile_record = await get_teacher_style_profile(db, request.tenant_id)
+        if profile_record and profile_record.status == "completed":
+            style_profile = _json.loads(profile_record.profile_json)
+    except Exception as _e:
+        logger.warning("Could not load style profile: %s", _e)
+
     snapshot_system_prompt = _build_snapshot_system_prompt(
         subject=getattr(tenant_settings, "subject", None),
         grade_level=getattr(tenant_settings, "grade_level", None),
+        style_profile=style_profile or None,
     )
 
     # 1. OCR or override
