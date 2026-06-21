@@ -126,8 +126,12 @@ async def detect_questions_with_ai(
                     questions.append(line)
             return questions
 
-        # Fallback: return as single question
-        return [result]
+        # Unexpected format — log and return empty rather than returning the full response
+        logger.warning(
+            "AI question extraction: unexpected format, returning empty. result=%s",
+            result[:200],
+        )
+        return []
 
     except Exception as e:
         logger.error("AI question detection failed: %s", e)
@@ -138,23 +142,25 @@ async def detect_questions(text: str, api_key: str | None = None) -> list[str]:
     """
     Main entry point.
     Uses rule-based for simple text, AI for complex passages.
+    Never returns the full passage as a question.
     """
     text = text.strip()
     if not text:
         return []
 
-    # Simple text → fast rule-based
+    # Simple text (short, no passage) → fast rule-based
     if _is_simple_text(text):
         logger.info("question_detector: using rule-based detection")
-        return _rule_based_detect(text)
+        result = _rule_based_detect(text)
+        # Don't return items longer than 300 chars — that's a passage, not a question
+        return [q for q in result if len(q) <= 300]
 
-    # Complex text with passage → AI extraction
+    # Complex text with passage → AI only, never fall back to rule-based
     if api_key:
         logger.info("question_detector: using AI context-aware detection")
         questions = await detect_questions_with_ai(text, api_key)
-        if questions:
-            return questions
-        # AI found nothing — fallback to rule-based
-        logger.warning("question_detector: AI found no questions, falling back to rule-based")
+        return questions
 
-    return _rule_based_detect(text)
+    # No API key and complex text — return empty rather than the passage
+    logger.warning("question_detector: complex text but no API key — cannot extract questions")
+    return []
