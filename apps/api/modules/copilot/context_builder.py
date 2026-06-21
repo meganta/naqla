@@ -93,6 +93,7 @@ class TenantContextPackage:
     retrieved_chunks: list[ChunkContext] = field(default_factory=list)
     is_profile_complete: bool = False
     missing_fields: list[str] = field(default_factory=list)
+    style_profile: dict = field(default_factory=dict)
 
 
 def _build_chunk_context(chunk: KnowledgeChunk, source_title: str) -> ChunkContext:

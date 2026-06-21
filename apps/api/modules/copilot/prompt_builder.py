@@ -78,6 +78,98 @@ def _format_chunk(chunk: ChunkContext, index: int) -> str:
     return "\n".join(lines)
 
 
+def build_style_profile_section(profile: dict) -> str:
+    """
+    Convert a Teacher Style Profile dict into a system prompt section.
+    Instructs the AI to mirror the teacher's communication and teaching style.
+    """
+    if not profile:
+        return ""
+
+    lines = ["## Teacher Style Profile (Mirror This Style)"]
+
+    # Tone
+    tone = profile.get("tone", {})
+    if tone and tone.get("confidence", 0) >= 50:
+        primary = tone.get("primary", "")
+        secondary = tone.get("secondary", [])
+        sec_str = f" with {', '.join(secondary)} elements" if secondary else ""
+        lines.append(f"- **Tone:** {primary}{sec_str}")
+
+    # Language style
+    lang = profile.get("language_style", {})
+    if lang and lang.get("confidence", 0) >= 50:
+        dialect = lang.get("dialect", "")
+        complexity = lang.get("vocabulary_complexity", "")
+        slang = lang.get("uses_dialect_slang", False)
+        if dialect:
+            lines.append(f"- **Language:** {dialect} Arabic, {complexity} vocabulary")
+        if slang:
+            lines.append(
+                "- Use natural Egyptian colloquial expressions where appropriate"
+            )
+
+    # Common phrases
+    phrases = profile.get("common_phrases", [])
+    high_freq = [p["phrase"] for p in phrases if p.get("frequency") == "high"]
+    if high_freq:
+        lines.append(f"- **Common phrases to use:** {' / '.join(high_freq[:3])}")
+
+    # Explanation style
+    exp = profile.get("explanation_style", {})
+    if exp and exp.get("confidence", 0) >= 50:
+        primary_style = exp.get("primary_style", "")
+        if primary_style:
+            lines.append(f"- **Explanation style:** {primary_style}")
+
+    # Teaching methodology
+    meth = profile.get("teaching_methodology", {})
+    if meth and meth.get("confidence", 0) >= 50:
+        flow = meth.get("lesson_flow", "")
+        if flow:
+            lines.append(f"- **Answer flow:** {flow}")
+
+    # Teaching habits
+    habits = profile.get("teaching_habits", {})
+    if habits and habits.get("confidence", 0) >= 50:
+        if habits.get("uses_repetition"):
+            lines.append("- Repeat and reinforce key points")
+        if habits.get("anticipates_student_mistakes"):
+            lines.append("- Proactively mention common mistakes students make")
+        emphasis = habits.get("emphasis", "")
+        if emphasis == "understanding":
+            lines.append("- Emphasize deep understanding over memorization")
+        detail = habits.get("preferred_detail_level", "")
+        if detail:
+            lines.append(f"- Detail level: {detail}")
+
+    # Student interaction
+    interaction = profile.get("student_interaction", {})
+    if interaction and interaction.get("confidence", 0) >= 50:
+        style = interaction.get("primary_style", "")
+        if style == "guide-discovery":
+            lines.append(
+                "- Guide students to discover answers rather than stating them directly"
+            )
+
+    # Exam orientation
+    exam = profile.get("exam_orientation", {})
+    if exam and exam.get("is_exam_focused") and exam.get("confidence", 0) >= 50:
+        focus_areas = exam.get("ranked_focus_areas", [])[:2]
+        if focus_areas:
+            lines.append(
+                f"- Exam-focused: highlight {' and '.join(focus_areas)}"
+            )
+
+    if len(lines) == 1:  # only header, no content
+        return ""
+
+    lines.append(
+        "- Always sound like THIS teacher, not a generic AI assistant"
+    )
+    return "\n".join(lines)
+
+
 def build_system_prompt(ctx: TenantContextPackage) -> str:
     sections = []
 
@@ -200,6 +292,12 @@ def build_system_prompt(ctx: TenantContextPackage) -> str:
             f"The following fields are missing: {missing}\n"
             "Default values will be used until the teacher completes their profile settings."
         )
+
+    # Inject teacher style profile if available
+    if hasattr(ctx, "style_profile") and ctx.style_profile:
+        style_section = build_style_profile_section(ctx.style_profile)
+        if style_section:
+            sections.insert(3, style_section)  # after methodology section
 
     return "\n\n".join(sections)
 

@@ -190,6 +190,7 @@ async def run_copilot(
     config: PipelineConfig = DEFAULT_CONFIG,
 ):
     from modules.settings.service import get_tenant_settings
+    from modules.teacher_profile.service import get_profile as get_teacher_profile
 
     raw_query = messages[-1].content if messages else ""
 
@@ -203,6 +204,16 @@ async def run_copilot(
 
     # --- Stage 2: Retrieve ---
     tenant_settings = await get_tenant_settings(db, tenant_id)
+
+    # Load teacher style profile
+    style_profile_record = await get_teacher_profile(db, tenant_id)
+    style_profile = {}
+    if style_profile_record and style_profile_record.status == "completed":
+        import json as _json
+        try:
+            style_profile = _json.loads(style_profile_record.profile_json)
+        except Exception:
+            pass
     chunks, distances = await retrieve_chunks(
         db, tenant_id, normalized.normalized_query, scope, config, question_type
     )
@@ -285,6 +296,7 @@ async def run_copilot(
         settings=tenant_settings, source_scope=scope, task_type=task_type,
         chunks=final_chunks, source_titles=source_titles,
     )
+    ctx.style_profile = style_profile
 
     system_prompt = build_system_prompt(ctx)
     last_message = messages[-1]
