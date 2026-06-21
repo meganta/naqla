@@ -7,6 +7,7 @@ const navItems = [
   { href: "/dashboard", label: "الرئيسية", icon: "🏠" },
   { href: "/knowledge", label: "مصادر المعرفة", icon: "📚" },
   { href: "/copilot", label: "المساعد الذكي", icon: "🤖" },
+  { href: "/teaching-style", label: "البصمة التعليمية", icon: "🧠" },
   { href: "/particles", label: "الجسيمات التعليمية", icon: "⚛️" },
   { href: "/curriculum", label: "خريطة المنهج", icon: "🗺️" },
   { href: "/marketplace", label: "السوق التعليمي", icon: "🏪" },

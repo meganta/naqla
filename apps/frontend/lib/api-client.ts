@@ -150,6 +150,25 @@ export const listSources = api.ingestion.listSources;
 export const getLatestJob = api.ingestion.getLatestJob;
 export const getJob = api.ingestion.getJob;
 export const deleteSource = api.ingestion.deleteSource;
+
+// Teacher Style Profile
+export const generateTeacherProfile = (token: string) =>
+  api.request<{ message: string; version: number; status: string }>(
+    "/teacher-profile/generate", { method: "POST" }, token
+  );
+
+export const getTeacherProfile = (token: string, includeProfile = false) =>
+  api.request<{
+    tenant_id: string;
+    version: number;
+    status: string;
+    chunks_analyzed: number;
+    sources_analyzed: number;
+    generated_at: string;
+    profile: Record<string, unknown> | null;
+  }>(
+    `/teacher-profile?include_profile=${includeProfile}`, {}, token
+  );
 export const updateSource = api.ingestion.updateSource;
 
 export async function getSettings(token: string) {
