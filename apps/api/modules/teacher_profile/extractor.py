@@ -101,14 +101,16 @@ def _build_extraction_prompt(chunks: list[dict], dimension: str) -> str:
     dimension_instructions = {
         "tone_and_language": """
 Extract from the knowledge chunks:
-1. TONE: Primary tone (Formal/Friendly/Strict/Motivational/Humorous/Calm/Energetic/Inspirational)
-   and secondary tones if present.
-2. LANGUAGE_STYLE: Classical Arabic / Egyptian Arabic / Mixed / Simple / Academic / Technical.
-   Also note: sentence length preference, vocabulary complexity, use of dialect/slang/English terms.
-3. COMMON_PHRASES: List the top recurring phrases/expressions the teacher uses
-   (with frequency estimate).
+1. TONE: Primary tone and secondary tones if present.
+   Use Arabic values such as: رسمي / ودود / صارم / تحفيزي / فكاهي / هادئ / نشيط / ملهم
+2. LANGUAGE_STYLE: Use Arabic values such as:
+   - dialect: عربية فصحى / عربية مصرية / مختلطة
+   - sentence_length: قصيرة / متوسطة / طويلة
+   - vocabulary_complexity: بسيطة / مختلطة / أكاديمية / تقنية
+3. COMMON_PHRASES: List the top recurring Arabic phrases/expressions the teacher uses.
+   frequency values in Arabic: مرتفع / متوسط / منخفض
 
-Return JSON only. No explanation.
+Return JSON only. All string values must be in Arabic.
 {
   "tone": {
     "primary": "...",
@@ -120,8 +122,8 @@ Return JSON only. No explanation.
   },
   "language_style": {
     "dialect": "...",
-    "sentence_length": "short|medium|long",
-    "vocabulary_complexity": "simple|mixed|academic|technical",
+    "sentence_length": "...",
+    "vocabulary_complexity": "...",
     "uses_english_terms": true/false,
     "uses_dialect_slang": true/false,
     "confidence": 0-100,
@@ -129,23 +131,21 @@ Return JSON only. No explanation.
     "representative_examples": ["...","..."]
   },
   "common_phrases": [
-    {"phrase": "...", "frequency": "high|medium|low", "context": "..."}
+    {"phrase": "...", "frequency": "...", "context": "..."}
   ]
 }""",
 
         "explanation_and_methodology": """
 Extract from the knowledge chunks:
-1. EXPLANATION_STYLE: How does the teacher explain? Rank these:
-   step-by-step / storytelling / real-life examples / analogies / definitions-first /
-   examples-first / comparison / question-then-explanation / summary-first / theoretical / practical
-2. TEACHING_METHODOLOGY: How does the teacher structure lessons?
-   - What does the teacher START with? (definition/rule/question/problem/story/misconception)
-   - What comes NEXT? (example/exercise/exam-question/discussion/summary)
-   - Patterns: spiral/incremental/micro-learning/scaffolding/exam-coaching
-3. DIFFICULTY_HANDLING: Does the teacher simplify aggressively / gradually increase /
-   use prerequisites / repeat concepts / provide multiple examples?
+1. EXPLANATION_STYLE: How does the teacher explain? Rank using Arabic values such as:
+   خطوة بخطوة / قصصي / أمثلة من الحياة / تشبيهات / تعريف أولاً / مثال أولاً /
+   مقارنة / سؤال ثم شرح / ملخص أولاً / نظري / تطبيقي
+2. TEACHING_METHODOLOGY: How does the teacher structure lessons? Use Arabic values:
+   - typically_starts_with: تعريف / قاعدة / سؤال / مشكلة / قصة / مفهوم خاطئ شائع
+   - detected_patterns: حلزوني / تدريجي / تعلم مصغر / سقالات تعليمية / تدريب امتحاني
+3. DIFFICULTY_HANDLING: Describe in Arabic how the teacher handles difficulty.
 
-Return JSON only.
+Return JSON only. All string values must be in Arabic.
 {
   "explanation_style": {
     "ranked_styles": ["...", "..."],
@@ -175,16 +175,15 @@ Return JSON only.
 
         "student_interaction_and_exam": """
 Extract from the knowledge chunks:
-1. STUDENT_INTERACTION: How does the teacher interact with students?
-   encourage / challenge / Socratic questions / motivate / warn / praise /
-   correct-gently / correct-directly / guide-discovery / provide-reassurance
-2. EXAM_ORIENTATION: Does the teacher focus on exam patterns?
-   Rank: marks / exam-patterns / common-mistakes / expected-questions /
-   model-answers / exam-traps / scoring-techniques / revision / memory-tricks
-3. EVIDENCE_BEHAVIOR: Does the teacher quote textbook / mention page numbers /
-   reference previous lessons / explain WHY / justify answers / refer to videos?
+1. STUDENT_INTERACTION: How does the teacher interact with students? Use Arabic values such as:
+   تشجيع / تحدي / أسئلة سقراطية / تحفيز / تحذير / مدح / تصحيح بلطف /
+   تصحيح مباشر / توجيه الاكتشاف / طمأنة
+2. EXAM_ORIENTATION: Does the teacher focus on exam patterns? Use Arabic values such as:
+   الدرجات / أنماط الامتحان / الأخطاء الشائعة / الأسئلة المتوقعة /
+   نماذج الإجابة / فخاخ الامتحان / تقنيات التسجيل / المراجعة / حيل الحفظ
+3. EVIDENCE_BEHAVIOR: Describe in Arabic.
 
-Return JSON only.
+Return JSON only. All string values must be in Arabic.
 {
   "student_interaction": {
     "primary_style": "...",
@@ -211,19 +210,19 @@ Return JSON only.
 }""",
 
         "teaching_habits": """
-Extract from the knowledge chunks additional teaching insights:
+Extract from the knowledge chunks additional teaching insights. All values must be in Arabic.
 1. TYPICAL_ANSWER_STRUCTURE: How does the teacher typically structure a complete answer?
-2. PREFERRED_DETAIL_LEVEL: brief / moderate / detailed / very-detailed
+2. PREFERRED_DETAIL_LEVEL: Use Arabic: مختصر / معتدل / مفصّل / مفصّل جداً
 3. USES_REPETITION: Does the teacher repeat key points frequently?
 4. USES_SUMMARY: Does the teacher frequently summarize?
 5. ANTICIPATES_MISTAKES: Does the teacher proactively mention common student errors?
-6. ENCOURAGES_MEMORIZATION_VS_UNDERSTANDING: Which does the teacher emphasize more?
-7. ENCOURAGES_CRITICAL_THINKING: true/false with evidence
-8. TRANSITION_STYLE: How does the teacher move between concepts?
-9. INTRODUCTION_STYLE: How does the teacher introduce new concepts?
-10. CONCLUSION_STYLE: How does the teacher conclude explanations?
+6. EMPHASIS: Use Arabic: حفظ / فهم / متوازن
+7. ENCOURAGES_CRITICAL_THINKING: true/false
+8. TRANSITION_STYLE: Describe in Arabic how the teacher moves between concepts.
+9. INTRODUCTION_STYLE: Describe in Arabic how the teacher introduces new concepts.
+10. CONCLUSION_STYLE: Describe in Arabic how the teacher concludes explanations.
 
-Return JSON only.
+Return JSON only. All string values must be in Arabic.
 {
   "teaching_habits": {
     "typical_answer_structure": "...",
@@ -231,7 +230,7 @@ Return JSON only.
     "uses_repetition": true/false,
     "uses_frequent_summaries": true/false,
     "anticipates_student_mistakes": true/false,
-    "emphasis": "memorization|understanding|balanced",
+    "emphasis": "...",
     "encourages_critical_thinking": true/false,
     "transition_style": "...",
     "introduction_style": "...",
@@ -302,7 +301,10 @@ async def extract_profile(
                         "role": "system",
                         "content": (
                             "You are an expert educational analyst. "
-                            "Return ONLY valid JSON. No markdown, no explanation."
+                            "Return ONLY valid JSON. No markdown, no explanation. "
+                            "ALL string values in the JSON must be written in Arabic. "
+                            "Do not use English for any field value — including labels, "
+                            "styles, patterns, behaviors, and descriptions."
                         ),
                     },
                     {"role": "user", "content": prompt},

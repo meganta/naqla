@@ -329,7 +329,19 @@ export default function TeachingStylePage() {
                   <div className="mt-2 space-y-1">
                     {Object.entries(profile.metadata.source_type_distribution).map(([type, count]) => (
                       <div key={type} className="flex items-center justify-between">
-                        <span className="text-xs text-gray-500">{type}</span>
+                        <span className="text-xs text-gray-500">
+                          {({
+                            youtube: "يوتيوب",
+                            video: "فيديو",
+                            audio: "صوت",
+                            pdf: "ملف PDF",
+                            docx: "ملف Word",
+                            pptx: "عرض تقديمي",
+                            text: "نص",
+                            manual: "يدوي",
+                            unknown: "غير معروف",
+                          } as Record<string, string>)[type] ?? type}
+                        </span>
                         <span className="text-xs font-medium text-gray-700">{count} مصدر</span>
                       </div>
                     ))}
