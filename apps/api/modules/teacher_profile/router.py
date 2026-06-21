@@ -43,12 +43,18 @@ async def trigger_generate(
     tenant_id = current_user.tenant_id
 
     async def _run():
-        from core.database import AsyncSessionLocal
-        async with AsyncSessionLocal() as bg_db:
-            try:
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from core.config import settings as cfg
+        engine = create_async_engine(cfg.database_url, pool_pre_ping=True)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            async with session_factory() as bg_db:
                 await generate_profile(bg_db, tenant_id)
-            except Exception as e:
-                logger.error("background generate_profile failed: %s", e)
+        except Exception as e:
+            logger.error("background generate_profile failed: %s", e)
+        finally:
+            await engine.dispose()
 
     background_tasks.add_task(_run)
 
